@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NCBI_API_KEY=${NCBI_API_KEY:-}
+      - CORS_ORIGINS=http://localhost:5173
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

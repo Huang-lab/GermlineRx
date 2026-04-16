@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+uvicorn.log
+
+# Data / uploads
+germline_webapp/backend/uploads/
+germline_webapp/backend/*.db
+
+# Generated static-mode assets (built by export_kb_to_json.py)
+germline_webapp/frontend/src/static-mode/tier1_kb.json
+germline_webapp/frontend/src/static-mode/tier3_kb.json
+germline_webapp/frontend/src/static-mode/alias_table.json
