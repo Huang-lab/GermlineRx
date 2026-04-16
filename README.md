@@ -1,34 +1,72 @@
-# GermlineRx
+# GermlineRx: A Patient-Facing Germline Variant Therapy & Trial Matcher
 
-**Patient-facing germline variant → therapy & trial matcher**
+GermlineRx translates a germline genetic variant into actionable clinical intelligence — FDA-approved therapies, recruiting clinical trials, emerging pipeline programs, and deep biomedical enrichment — in seconds.
 
-Enter a genetic variant (e.g. `CFTR F508del`, `BRCA2 6174delT`, `HBB HbS`) and get:
-
-- **Tier 0** — Variant interpretation (ClinVar pathogenicity, gnomAD allele frequency)
-- **Tier 1** — FDA-approved therapies for your gene/variant (50+ genes, 100+ entries)
-- **Tier 2** — Recruiting clinical trials from ClinicalTrials.gov, age-filtered
-- **Tier 3** — Emerging pipeline programs (CRISPR, ASO, gene therapy, mRNA)
-- **Enrichment** — OMIM, DisGeNET, GWAS, BioGRID, drug-drug interactions, orphan drugs
-
-No API keys required. All external sources (ClinVar, gnomAD, ClinicalTrials.gov) are free and public.
+**Live app:** [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx)
 
 ---
 
-## Quick Start
+## Overview
+
+Most genomic variant tools are built for clinicians or bioinformaticians. GermlineRx is designed for patients and researchers who want to understand what a germline variant means for treatment options today and clinical opportunities tomorrow.
+
+Enter any variant in any format — `CFTR F508del`, `BRCA2 c.5946del`, `HBB HbS`, `APOE c.388T>C` — and GermlineRx returns a structured, tiered report.
+
+---
+
+## Key Capabilities
+
+**Tier 0 — Variant Interpretation**
+- ClinVar pathogenicity classification with review star rating
+- gnomAD population allele frequency and rarity interpretation
+- Supports HGVS, protein notation, common names, rsIDs, and exon deletions
+
+**Tier 1 — FDA-Approved Therapies**
+- Curated knowledge base covering 50+ genes and 100+ FDA-approved therapy entries
+- Matched to variant functional class (e.g. F508del, gating mutation, nonsense, sickle cell)
+- Includes drug name, approval year, indication line, caveats, and FDA source
+
+**Tier 2 — Recruiting Clinical Trials**
+- Live query to ClinicalTrials.gov v2 API
+- Age-filtered eligibility checking with plain-language explanations
+- Direct links to trial pages and contact information
+
+**Tier 3 — Emerging Pipeline**
+- CRISPR, ASO, mRNA, gene therapy, and RNAi programs in active development
+- Stage-annotated (Preclinical → Phase 3) with key programs and caveats
+
+**Enrichment (local mode)**
+- OMIM gene-phenotype associations
+- DisGeNET gene-disease scores
+- GWAS catalog trait associations
+- Broad Repurposing Hub drug candidates
+- Drug-drug interaction flags (DDInter)
+- BioGRID protein-protein interactions
+- Orphan disease and orphan drug mapping
+
+---
+
+## Supported Genes (examples)
+
+CFTR · DMD · SMN1 · SOD1 · HTT · TTR · HBB · BRCA1 · BRCA2 · MLH1 · MSH2 · LDLR · PCSK9 · APOE · GBA · F8 · F9 · RET · TP53 · PTEN · APC · VHL · NF1 · MYBPC3 · MYH7 · KCNQ1 · SCN5A · PKD1 · FBN1 · ATP7B · and 20+ more
+
+---
+
+## Getting Started
 
 **Prerequisites:** Python 3.9+, Node 18+
 
 ```bash
-# 1. Clone
+# Clone
 git clone https://github.com/Huang-lab/GermlineRx.git
 cd GermlineRx
 
-# 2. Start backend
+# Backend
 cd germline_webapp/backend
 pip install -r requirements.txt
 python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# 3. Start frontend (new terminal)
+# Frontend (new terminal)
 cd germline_webapp/frontend
 npm install
 npm run dev
@@ -38,33 +76,15 @@ Open **http://localhost:5173**
 
 ---
 
-## Browser-Only (Static) Mode
+## External APIs
 
-Run GermlineRx entirely in the browser — no backend server needed. Deploys as a static site to GitHub Pages.
+All APIs are free and require no account or key.
 
-```bash
-# 1. Export knowledge bases to JSON
-python scripts/export_kb_to_json.py
-
-# 2. Build static frontend
-cd germline_webapp/frontend
-VITE_STATIC_MODE=true npm run build
-
-# 3. Preview locally
-npx serve dist
-```
-
-In static mode, Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly from the browser. Enrichment data (OMIM, GWAS, BioGRID) is not available.
-
----
-
-## External APIs Used
-
-| API | Purpose | Key Required? |
+| API | Purpose | Key Required |
 |-----|---------|--------------|
-| [ClinVar (NCBI)](https://www.ncbi.nlm.nih.gov/clinvar/) | Variant pathogenicity | No (optional `NCBI_API_KEY` for higher rate limit) |
-| [gnomAD GraphQL](https://gnomad.broadinstitute.org) | Population allele frequency | No |
-| [ClinicalTrials.gov v2](https://clinicaltrials.gov/api/v2/) | Recruiting trials | No |
+| ClinVar (NCBI E-utilities) | Variant pathogenicity | No (optional for higher rate limit) |
+| gnomAD GraphQL | Population allele frequency | No |
+| ClinicalTrials.gov v2 | Recruiting trial search | No |
 
 ---
 
@@ -73,24 +93,82 @@ In static mode, Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly f
 ```
 GermlineRx/
 ├── germline_webapp/
-│   ├── backend/          Python/FastAPI — normalizer, tier0-3, enrichment
-│   └── frontend/         React/Vite/Tailwind
+│   ├── backend/
+│   │   ├── app/
+│   │   │   ├── engine/
+│   │   │   │   ├── normalizer.py      # Free-text variant → canonical gene + HGVS
+│   │   │   │   ├── tier0.py           # ClinVar + gnomAD interpretation
+│   │   │   │   ├── tier1.py           # FDA-approved therapy KB
+│   │   │   │   ├── tier2.py           # ClinicalTrials.gov matching
+│   │   │   │   └── tier3.py           # Emerging pipeline KB
+│   │   │   ├── enrichment/
+│   │   │   │   └── datalake.py        # Biomni datalake reader
+│   │   │   └── api/routes.py          # POST /api/analyze, /normalize, /upload
+│   │   └── requirements.txt
+│   └── frontend/
+│       └── src/
+│           ├── App.tsx
+│           ├── components/            # Input forms, results panels, trial cards
+│           └── static-mode/           # Browser-only engine (no backend needed)
 ├── scripts/
-│   └── export_kb_to_json.py   — generates JSON for static mode
-└── CLAUDE.md             Full developer reference
+│   └── export_kb_to_json.py          # Export KBs to JSON for static mode
+└── .github/workflows/deploy.yml      # Auto-deploy to GitHub Pages
 ```
+
+---
+
+## Static (Browser-Only) Mode
+
+GermlineRx can run entirely in the browser with no backend server, deployed as a static site.
+
+```bash
+# Export knowledge bases to JSON
+python scripts/export_kb_to_json.py
+
+# Build and preview
+cd germline_webapp/frontend
+VITE_STATIC_MODE=true npm run build
+npx serve dist
+```
+
+In static mode, Tier 1 and Tier 3 run from bundled JSON. Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly from the browser. Enrichment data requires local mode.
 
 ---
 
 ## Configuration
 
-Copy `germline_webapp/backend/.env.example` to `.env` to set optional environment variables:
+Copy `germline_webapp/backend/.env.example` to `.env`:
 
 ```bash
-NCBI_API_KEY=...          # improves ClinVar rate limit 3→10 req/s
-BIOMNI_DATA_PATH=...      # path to local enrichment datalake
+NCBI_API_KEY=your_key       # Optional — raises ClinVar limit from 3 to 10 req/s
+BIOMNI_DATA_PATH=/path/to/data_lake   # Required for enrichment features
 ```
 
 ---
+
+## Example Variants
+
+```bash
+# CFTR F508del — expect: FULLY_ACTIONABLE, Trikafta
+curl -s -X POST http://localhost:8000/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"variant":{"gene":"CFTR","hgvs":"c.1521_1523del","disease":"Cystic Fibrosis","age":24,"patient_label":"Test","functional_class":"f508del"}}'
+
+# HBB sickle cell — expect: FULLY_ACTIONABLE, Casgevy
+curl -s -X POST http://localhost:8000/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"variant":{"gene":"HBB","hgvs":"c.20A>T","disease":"Sickle Cell Disease","age":35,"patient_label":"Test","functional_class":"sickle_cell"}}'
+
+# BRCA2 — expect: FULLY_ACTIONABLE, Olaparib
+curl -s -X POST http://localhost:8000/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"variant":{"gene":"BRCA2","hgvs":"p.Arg2336His","disease":"Hereditary Breast Cancer","age":25,"patient_label":"Test","functional_class":null}}'
+```
+
+---
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 > **Disclaimer:** GermlineRx is for educational and research purposes only. It is not a substitute for advice from a qualified healthcare professional. Always consult a genetic counselor or physician before making any medical decisions.
