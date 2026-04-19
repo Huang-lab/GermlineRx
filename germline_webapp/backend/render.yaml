@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: germline-rx-api
+    runtime: python
+    rootDir: germline_webapp/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CORS_ORIGINS
+        value: https://germline-rx.vercel.app
+      - key: LOG_LEVEL
+        value: INFO

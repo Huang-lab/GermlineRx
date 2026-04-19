@@ -2,7 +2,10 @@
 
 GermlineRx translates a germline genetic variant into actionable clinical intelligence — FDA-approved therapies, recruiting clinical trials, emerging pipeline programs, and deep biomedical enrichment — in seconds.
 
-**Live app:** [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx)
+| Deployment | URL | Mode |
+|------------|-----|------|
+| GitHub Pages (static) | [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx) | Browser-only, no backend |
+| Vercel + Render (full) | [germline-rx.vercel.app](https://germline-rx.vercel.app) | All features, free cloud backend |
 
 ---
 
@@ -112,8 +115,45 @@ GermlineRx/
 │           └── static-mode/           # Browser-only engine (no backend needed)
 ├── scripts/
 │   └── export_kb_to_json.py          # Export KBs to JSON for static mode
+├── vercel.json                        # Vercel frontend deploy config
+├── germline_webapp/backend/render.yaml  # Render.com backend deploy config
 └── .github/workflows/deploy.yml      # Auto-deploy to GitHub Pages
 ```
+
+---
+
+## Hosting Options
+
+### Option 1 — GitHub Pages (static, no backend)
+Auto-deploys on every push to `main` via `.github/workflows/deploy.yml`.
+Live at: **https://huang-lab.github.io/GermlineRx**
+
+Tier 1 and Tier 3 run from bundled JSON. Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly from the browser. Enrichment not available.
+
+### Option 2 — Vercel + Render (full stack, all features)
+
+**Architecture:**
+```
+Browser → Vercel (React frontend) → Render.com (FastAPI backend)
+                                         ├── ClinVar API
+                                         ├── gnomAD API
+                                         └── ClinicalTrials.gov API
+```
+
+**Backend on Render.com** (free tier):
+1. New Web Service → connect `Huang-lab/GermlineRx`
+2. Root directory: `germline_webapp/backend`
+3. Build: `pip install -r requirements.txt`
+4. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+5. Env var: `CORS_ORIGINS=https://germline-rx.vercel.app`
+
+**Frontend on Vercel** (free):
+1. Import `Huang-lab/GermlineRx`
+2. Root directory: `germline_webapp/frontend`
+3. Build: `npm run build` (no VITE_STATIC_MODE)
+4. Output: `dist`
+
+The `vercel.json` in the frontend directory automatically proxies `/api/*` calls to the Render backend — no code changes needed.
 
 ---
 
