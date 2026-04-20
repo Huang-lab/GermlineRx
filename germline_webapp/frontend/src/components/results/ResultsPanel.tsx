@@ -33,7 +33,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
         </div>
         <div className="flex items-center gap-2">
           {/* Patient / Clinician toggle */}
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+          <div className="no-print flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
             <button
               className={`px-3 py-1.5 transition ${view === 'patient' ? 'bg-brand-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
               onClick={() => setView('patient')}
@@ -43,7 +43,13 @@ export default function ResultsPanel({ data, onReset }: Props) {
               onClick={() => setView('clinician')}
             >Clinician</button>
           </div>
-          <button onClick={onReset} className="text-xs text-gray-400 hover:text-gray-600 underline">
+          <button
+            onClick={() => window.print()}
+            className="no-print text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded px-2 py-1"
+          >
+            ↓ PDF
+          </button>
+          <button onClick={onReset} className="no-print text-xs text-gray-400 hover:text-gray-600 underline">
             New search
           </button>
         </div>
@@ -225,11 +231,11 @@ export default function ResultsPanel({ data, onReset }: Props) {
 }
 
 function TierSection({
-  title, icon, count, subtitle, children
+  title, icon, count, subtitle, children, defaultOpen = true
 }: {
-  title: string; icon: string; count: number | null; subtitle?: string; children: React.ReactNode
+  title: string; icon: string; count: number | null; subtitle?: string; children: React.ReactNode; defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
       <button
@@ -273,7 +279,7 @@ function EnrichmentSection({ enrichment }: { enrichment: EnrichmentResult }) {
   if (!hasData) return null
 
   return (
-    <TierSection title="Enrichment (Biomni Datalake)" icon="🗄️" count={null}>
+    <TierSection title="Enrichment (Biomni Datalake)" icon="🗄️" count={null} defaultOpen={false}>
       <div className="space-y-4">
 
         {/* DDI Safety Flags — shown first as warnings */}

@@ -6,3 +6,9 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: #f8fafc;
 }
+
+@media print {
+  .no-print { display: none !important; }
+  body { font-size: 11pt; color: #000; background: #fff; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #555; }
+}
