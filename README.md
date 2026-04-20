@@ -4,8 +4,8 @@ GermlineRx translates a germline genetic variant into actionable clinical intell
 
 | Deployment | URL | Mode |
 |------------|-----|------|
-| GitHub Pages (static) | [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx) | Browser-only, no backend |
-| Vercel + Render (full) | [germline-rx.vercel.app](https://germline-rx.vercel.app) | All features, free cloud backend |
+| GitHub Pages (static) | [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx) | Browser-only, no backend needed |
+| HuggingFace Spaces (full) | [Rita9CoreX-germline-rx.hf.space](https://Rita9CoreX-germline-rx.hf.space) | All features, full backend |
 
 ---
 
@@ -38,7 +38,7 @@ Enter any variant in any format — `CFTR F508del`, `BRCA2 c.5946del`, `HBB HbS`
 - CRISPR, ASO, mRNA, gene therapy, and RNAi programs in active development
 - Stage-annotated (Preclinical → Phase 3) with key programs and caveats
 
-**Enrichment (local mode)**
+**Enrichment (full mode only)**
 - OMIM gene-phenotype associations
 - DisGeNET gene-disease scores
 - GWAS catalog trait associations
@@ -55,7 +55,7 @@ CFTR · DMD · SMN1 · SOD1 · HTT · TTR · HBB · BRCA1 · BRCA2 · MLH1 · MS
 
 ---
 
-## Getting Started
+## Getting Started (Local)
 
 **Prerequisites:** Python 3.9+, Node 18+
 
@@ -112,67 +112,25 @@ GermlineRx/
 │       └── src/
 │           ├── App.tsx
 │           ├── components/            # Input forms, results panels, trial cards
-│           └── static-mode/           # Browser-only engine (no backend needed)
+│           └── static-mode/           # Browser-only engine (GitHub Pages)
 ├── scripts/
-│   └── export_kb_to_json.py          # Export KBs to JSON for static mode
-├── vercel.json                        # Vercel frontend deploy config
-├── huggingface/                       # HuggingFace Spaces backend deploy
-│   ├── Dockerfile                     # Docker config for HF Space
-│   ├── startup.sh                     # Downloads datalake + starts uvicorn
-│   ├── download_datalake.py           # Pulls Biomni data from HF Datasets
-│   ├── requirements.txt
-│   └── DEPLOY.md                      # Step-by-step deploy guide
-└── .github/workflows/deploy.yml      # Auto-deploy to GitHub Pages
+│   └── export_kb_to_json.py          # Exports KBs to JSON for static mode
+└── .github/workflows/deploy.yml      # Auto-deploy to GitHub Pages on push
 ```
 
 ---
 
-## Hosting Options
+## Hosting
 
-### Option 1 — GitHub Pages (static, no backend)
-Auto-deploys on every push to `main` via `.github/workflows/deploy.yml`.
-Live at: **https://huang-lab.github.io/GermlineRx**
+### GitHub Pages (static, no backend)
+Auto-deploys on every push to `main`. Live at **https://huang-lab.github.io/GermlineRx**
 
 Tier 1 and Tier 3 run from bundled JSON. Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly from the browser. Enrichment not available.
 
-### Option 2 — Vercel + Hugging Face Spaces (full stack, all features, always-on)
+### HuggingFace Spaces (full stack)
+Full backend served via Docker at **https://Rita9CoreX-germline-rx.hf.space**
 
-**Architecture:**
-```
-Browser → Vercel (React frontend) → HF Spaces (FastAPI backend, Docker)
-                                         ├── ClinVar API
-                                         ├── gnomAD API
-                                         └── ClinicalTrials.gov API
-```
-
-See **[huggingface/DEPLOY.md](huggingface/DEPLOY.md)** for the complete step-by-step deployment guide.
-
-**Quick summary:**
-1. Create a HuggingFace Space (Docker SDK) at huggingface.co/new-space
-2. Push the `huggingface/` folder + `germline_webapp/backend/app/` to the Space repo
-3. Set Space secret: `CORS_ORIGINS=https://germline-rx.vercel.app`
-4. Deploy frontend on Vercel — root directory: `germline_webapp/frontend`
-5. Update `germline_webapp/frontend/vercel.json` with your HF Space URL
-
-**Total cost: $0. No cold starts.**
-
----
-
-## Static (Browser-Only) Mode
-
-GermlineRx can run entirely in the browser with no backend server, deployed as a static site.
-
-```bash
-# Export knowledge bases to JSON
-python scripts/export_kb_to_json.py
-
-# Build and preview
-cd germline_webapp/frontend
-VITE_STATIC_MODE=true npm run build
-npx serve dist
-```
-
-In static mode, Tier 1 and Tier 3 run from bundled JSON. Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly from the browser. Enrichment data requires local mode.
+Frontend and backend run in the same container. All 4 tiers + enrichment available (enrichment requires datalake files).
 
 ---
 
@@ -187,7 +145,7 @@ BIOMNI_DATA_PATH=/path/to/data_lake   # Required for enrichment features
 
 ---
 
-## Example Variants
+## Example Queries
 
 ```bash
 # CFTR F508del — expect: FULLY_ACTIONABLE, Trikafta
