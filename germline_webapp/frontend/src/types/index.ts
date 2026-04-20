@@ -56,7 +56,7 @@ export interface TrialResult {
   conditions: string[]
   interventions: string[]
   relevance_score: number
-  eligibility_overall: 'ELIGIBLE' | 'LIKELY_ELIGIBLE' | 'CHECK_WITH_DOCTOR' | 'INELIGIBLE'
+  eligibility_overall: 'ELIGIBLE' | 'LIKELY_ELIGIBLE' | 'CHECK_WITH_DOCTOR' | 'INELIGIBLE' | 'UNKNOWN'
   eligibility_plain: string
   criterion_checks: CriterionCheck[]
   contact_name: string | null

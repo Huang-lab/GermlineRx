@@ -496,7 +496,7 @@ function mapStudyToTrial(s: RawStudy, age: number | null): TrialResult {
     title: id.briefTitle || 'Untitled Trial',
     phase: (p.designModule?.phases || []).join(', ') || null,
     conditions: p.conditionsModule?.conditions || [],
-    interventions: (p.armsInterventionsModule?.interventions || []).map((i: { name?: string }) => i.name || ''),
+    interventions: (p.armsInterventionsModule?.interventions || []).map((i: { name?: string }) => i.name || '').filter(Boolean),
     relevance_score: 50,
     eligibility_overall: eligOverall,
     eligibility_plain: 'Review full eligibility criteria on ClinicalTrials.gov',
@@ -726,6 +726,25 @@ export async function staticAnalyze(
   age: number | null,
   functionalClass: string | null,
 ): Promise<AnalyzeResponse> {
+  if (gene === 'UNKNOWN') {
+    return {
+      patient_label: 'Patient',
+      gene: 'UNKNOWN',
+      hgvs,
+      display_mutation: hgvs,
+      functional_class: null,
+      overall_status: 'NOT_ACTIONABLE',
+      tier0: { classification: 'Unknown significance', confidence: 'LOW', review_stars: 0, review_status: 'No data', gnomad_af: null, gnomad_interpretation: 'Allele frequency not available', gnomad_url: null, clinvar_id: null, clingen_note: null },
+      tier1: { drugs: [], surveillance: [] },
+      tier2: { trials: [], total_fetched: 0, total_after_scoring: 0 },
+      tier3: { pipeline: [] },
+      enrichment: undefined,
+      patient_summary: 'The gene or variant could not be recognized. Please check the spelling or try a different format (e.g. HGVS notation, gene symbol, or common name like F508del).',
+      patient_next_steps: ['Try entering your gene symbol directly (e.g. CFTR, BRCA2).', 'Use HGVS notation like c.1521_1523del for best results.'],
+      clinician_notes: ['Gene normalization failed — UNKNOWN returned.'],
+    }
+  }
+
   const [tier0, tier1, tier2] = await Promise.all([
     fetchTier0(gene, hgvs),
     fetchTier1(gene),

@@ -50,7 +50,7 @@ export default function ManualEntry({ onAnalyze, loading }: Props) {
       normalized.gene,
       normalized.hgvs,
       conditionText,
-      age ? parseInt(age) : null,
+      age !== '' ? parseInt(age) : null,
       normalized.functional_class,
     )
   }
