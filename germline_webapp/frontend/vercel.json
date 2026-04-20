@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "https://Rita9CoreX-germline-rx.hf.space/api/$1"
-    }
-  ]
-}

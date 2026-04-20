@@ -1,5 +1,0 @@
-{
-  "buildCommand": "cd germline_webapp/frontend && npm install && npm run build",
-  "outputDirectory": "germline_webapp/frontend/dist",
-  "framework": "vite"
-}
