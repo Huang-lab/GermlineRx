@@ -126,8 +126,8 @@ function matchTier1(gene: string, functionalClass: string | null): Tier1Result {
     match_functional_classes: string[] | null
     action_type: string
     drug_name?: string
-    recommendation?: string
     action?: string
+    recommendation?: string
     fda_approved?: boolean
     approval_year?: string
     evidence_level: string
@@ -157,9 +157,9 @@ function matchTier1(gene: string, functionalClass: string | null): Tier1Result {
         caveat: entry.caveat || null,
         source: entry.source || null,
       })
-    } else if ((entry.action_type === 'surveillance' || entry.action_type === 'surgery') && entry.recommendation) {
+    } else if ((entry.action_type === 'surveillance' || entry.action_type === 'surgery') && (entry.action || entry.recommendation)) {
       surveillance.push({
-        recommendation: entry.recommendation,
+        recommendation: entry.action || entry.recommendation || '',
         action_type: entry.action_type,
         evidence_level: entry.evidence_level,
         source: entry.source || null,
