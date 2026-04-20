@@ -29,7 +29,7 @@ api = HfApi()
 data_path = "/Users/luj12/Desktop/PROJECTS/Agentic Workflow/Biomni/data/biomni_data/data_lake"
 
 # Replace with your HuggingFace username
-repo_id = "YOUR_USERNAME/biomni-datalake"
+repo_id = "Rita9CoreX/biomni-datalake"
 
 api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
 
@@ -59,7 +59,7 @@ EOF
 3. Clone the Space repo locally:
 
 ```bash
-git clone https://huggingface.co/spaces/YOUR_USERNAME/germline-rx
+git clone https://huggingface.co/spaces/Rita9CoreX/germline-rx
 cd germline-rx
 ```
 
@@ -71,7 +71,7 @@ cp -r /path/to/GermlineRx/germline_webapp/backend/app ./app
 ```
 
 5. Set the datalake repo in Dockerfile:
-   - Replace `YOUR_HF_USERNAME/biomni-datalake` with your actual username
+   - Replace `Rita9CoreX/biomni-datalake` with your actual username
 
 6. Push:
 
@@ -91,7 +91,7 @@ In Space Settings → Variables and Secrets:
 
 | Key | Value |
 |---|---|
-| `HF_DATALAKE_REPO` | `YOUR_USERNAME/biomni-datalake` |
+| `HF_DATALAKE_REPO` | `Rita9CoreX/biomni-datalake` |
 | `HF_TOKEN` | Your HF token (only if dataset is private) |
 | `NCBI_API_KEY` | Optional — increases ClinVar rate limit |
 
@@ -103,7 +103,7 @@ In Space Settings → Variables and Secrets:
 2. Go to vercel.com → New Project → Import from GitHub
 3. Set root directory to `germline_webapp/frontend`
 4. Add environment variable:
-   - `VITE_API_URL` = `https://YOUR_USERNAME-germline-rx.hf.space`
+   - `VITE_API_URL` = `https://Rita9CoreX-germline-rx.hf.space`
 5. Deploy
 
 Update `vite.config.ts` proxy target to point to HF Space URL:
@@ -144,8 +144,8 @@ Each cold start re-downloads. Warm Space = instant response.
 
 | Service | URL |
 |---|---|
-| Backend API | `https://YOUR_USERNAME-germline-rx.hf.space` |
-| API Docs | `https://YOUR_USERNAME-germline-rx.hf.space/docs` |
+| Backend API | `https://Rita9CoreX-germline-rx.hf.space` |
+| API Docs | `https://Rita9CoreX-germline-rx.hf.space/docs` |
 | Frontend | `https://germline-rx.vercel.app` |
 
 **Total cost: $0**

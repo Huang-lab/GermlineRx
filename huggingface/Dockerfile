@@ -25,7 +25,7 @@ USER user
 
 ENV HOME=/home/user \
     BIOMNI_DATA_PATH=/data/datalake \
-    HF_DATALAKE_REPO=YOUR_HF_USERNAME/biomni-datalake \
+    HF_DATALAKE_REPO=Rita9CoreX/biomni-datalake \
     PYTHONPATH=/app
 
 EXPOSE 8000
