@@ -1,4 +1,5 @@
 const MYVARIANT_URL = 'https://myvariant.info/v1/query'
+const GNOMAD_GRAPHQL = 'https://gnomad.broadinstitute.org/api'
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -12,33 +13,52 @@ export default async function handler(req, res) {
   if (!gene || !hgvs) return res.status(400).json({ error: 'gene and hgvs required' })
 
   const geneUpper = gene.toUpperCase()
-  const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r2_1`
+  const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r4`
 
   try {
-    // MyVariant.info: space-separated gene + hgvs (colon separator returns 0 hits)
+    // Step 1: MyVariant.info with assembly=hg38 → GRCh38 VCF coordinates
     const q = encodeURIComponent(`${geneUpper} ${hgvs}`)
-    const fields = 'gnomad_genome.af.af,gnomad_exome.af.af,vcf,_id'
-    const url = `${MYVARIANT_URL}?q=${q}&fields=${fields}&size=1`
-
-    const mvRes = await fetch(url)
+    const mvRes = await fetch(
+      `${MYVARIANT_URL}?q=${q}&fields=vcf,_id&assembly=hg38&size=1`
+    )
     if (!mvRes.ok) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
 
     const mvJson = await mvRes.json()
     const hit = mvJson?.hits?.[0]
-    if (!hit) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
-
-    const af = hit?.gnomad_genome?.af?.af ?? hit?.gnomad_exome?.af?.af ?? null
-
-    // Build gnomAD URL from vcf field (chrom-pos-ref-alt format)
-    let gnomadUrl = geneLevelUrl
-    const vcf = hit?.vcf
-    const chrMatch = (hit._id || '').match(/^chr(\w+):/)
-    if (vcf?.position && vcf?.ref && vcf?.alt && chrMatch) {
-      const chr = chrMatch[1]
-      gnomadUrl = `https://gnomad.broadinstitute.org/variant/${chr}-${vcf.position}-${vcf.ref}-${vcf.alt}?dataset=gnomad_r2_1`
+    if (!hit?.vcf?.position || !hit?.vcf?.ref || !hit?.vcf?.alt) {
+      return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
     }
 
-    return res.status(200).json({ af, gnomad_url: gnomadUrl })
+    const chrMatch = (hit._id || '').match(/^chr(\w+):/)
+    if (!chrMatch) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
+
+    const chr = chrMatch[1]
+    const { position: pos, ref, alt } = hit.vcf
+    const variantId = `${chr}-${pos}-${ref}-${alt}`
+    const variantUrl = `https://gnomad.broadinstitute.org/variant/${variantId}?dataset=gnomad_r4`
+
+    // Step 2: gnomAD v4 GraphQL — server-side, no CORS restriction
+    const gnomadRes = await fetch(GNOMAD_GRAPHQL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `query($v: String!) {
+          variant(variantId: $v, dataset: gnomad_r4) {
+            genome { af }
+            exome  { af }
+          }
+        }`,
+        variables: { v: variantId },
+      }),
+    })
+
+    if (!gnomadRes.ok) return res.status(200).json({ af: null, gnomad_url: variantUrl })
+
+    const gnomadJson = await gnomadRes.json()
+    const variant = gnomadJson?.data?.variant
+    const af = variant?.genome?.af ?? variant?.exome?.af ?? null
+
+    return res.status(200).json({ af, gnomad_url: variantUrl })
   } catch {
     return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
   }
