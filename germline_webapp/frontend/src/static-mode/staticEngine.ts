@@ -304,17 +304,58 @@ async function fetchTier0(gene: string, hgvs: string): Promise<Tier0Result> {
   }
 }
 
+// ─── Gene-specific search terms (mirrors backend tier2.py SEARCH_TERMS) ───────
+const SEARCH_TERMS: Record<string, string[]> = {
+  "CFTR":   ["cystic fibrosis CFTR modulator", "CFTR F508del", "cystic fibrosis gene therapy"],
+  "DMD":    ["Duchenne muscular dystrophy gene therapy", "DMD exon skipping", "dystrophin"],
+  "SOD1":   ["SOD1 ALS tofersen", "SOD1 amyotrophic lateral sclerosis"],
+  "SMN1":   ["spinal muscular atrophy SMN", "SMA nusinersen risdiplam"],
+  "BRCA1":  ["BRCA1 PARP inhibitor", "hereditary breast cancer BRCA1"],
+  "BRCA2":  ["BRCA2 PARP inhibitor", "hereditary breast cancer BRCA2"],
+  "MLH1":   ["Lynch syndrome MLH1", "mismatch repair deficiency MSI-H"],
+  "MSH2":   ["Lynch syndrome MSH2", "mismatch repair MSH2"],
+  "MSH6":   ["Lynch syndrome MSH6", "mismatch repair MSH6"],
+  "TTR":    ["transthyretin amyloidosis TTR", "hATTR tafamidis"],
+  "HBB":    ["sickle cell disease gene therapy", "HBB beta thalassemia"],
+  "LDLR":   ["familial hypercholesterolemia LDLR", "PCSK9 inhibitor FH"],
+  "MYBPC3": ["hypertrophic cardiomyopathy mavacamten", "HCM MYBPC3"],
+  "MYH7":   ["hypertrophic cardiomyopathy MYH7", "HCM sarcomere"],
+  "NF1":    ["neurofibromatosis NF1 selumetinib", "NF1 plexiform neurofibroma"],
+  "VHL":    ["von Hippel-Lindau VHL belzutifan", "VHL renal cell carcinoma"],
+  "RET":    ["MEN2 RET medullary thyroid", "RET selpercatinib"],
+  "GBA":    ["Gaucher disease GBA", "GBA Parkinson disease"],
+  "HTT":    ["Huntington disease HTT", "huntingtin lowering"],
+  "FXN":    ["Friedreich ataxia FXN", "frataxin"],
+  "F8":     ["hemophilia A gene therapy", "factor VIII emicizumab"],
+  "F9":     ["hemophilia B gene therapy", "factor IX etranacogene"],
+  "TP53":   ["Li-Fraumeni syndrome TP53", "TP53 germline surveillance"],
+  "PALB2":  ["PALB2 breast cancer PARP inhibitor"],
+  "ATM":    ["ATM breast cancer PARP inhibitor", "ATM pancreatic cancer"],
+  "CHEK2":  ["CHEK2 breast cancer surveillance"],
+}
+
 // ─── Tier 2: ClinicalTrials.gov (direct browser fetch) ───────────────────────
 
 async function fetchTier2(gene: string, disease: string, age: number | null): Promise<Tier2Result> {
   try {
-    const query = encodeURIComponent(`${gene} ${disease}`)
-    const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=10&format=json`
+    const geneUpper = gene.toUpperCase()
+    const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
+    const query = encodeURIComponent(terms[0])
+    const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=15&format=json`
     const res = await fetch(url)
     const json = await res.json()
     const studies = json?.studies || []
 
-    const trials: TrialResult[] = studies
+    // Filter: keep only trials that mention the gene or a disease keyword in title/conditions
+    const geneKeywords = [geneUpper, gene.toLowerCase(), ...(SEARCH_TERMS[geneUpper] || []).flatMap(t => t.toLowerCase().split(' ').filter(w => w.length > 4))]
+    const relevant = studies.filter((s: { protocolSection?: { identificationModule?: { briefTitle?: string }; conditionsModule?: { conditions?: string[] } } }) => {
+      const title = (s.protocolSection?.identificationModule?.briefTitle || '').toLowerCase()
+      const conditions = (s.protocolSection?.conditionsModule?.conditions || []).join(' ').toLowerCase()
+      const text = `${title} ${conditions}`
+      return geneKeywords.some(kw => text.includes(kw.toLowerCase()))
+    })
+
+    const trials: TrialResult[] = relevant
       .map((s: {
         protocolSection?: {
           identificationModule?: { nctId?: string; briefTitle?: string }
@@ -357,7 +398,7 @@ async function fetchTier2(gene: string, disease: string, age: number | null): Pr
         }
       })
 
-    return { trials, total_fetched: studies.length, total_after_scoring: trials.length }
+    return { trials, total_fetched: studies.length, total_after_scoring: relevant.length }
   } catch {
     return { trials: [], total_fetched: 0, total_after_scoring: 0 }
   }
@@ -401,10 +442,12 @@ export async function staticAnalyze(
 
   const fdaDrugs = tier1.drugs.filter(d => d.fda_approved).map(d => d.drug_name)
   const patientSummary = fdaDrugs.length > 0
-    ? `Your ${gene} variant has FDA-approved treatment options including ${fdaDrugs.join(', ')}. Results shown here are for informational purposes only — always consult your physician.`
+    ? `Your ${gene} variant has ${fdaDrugs.length} FDA-approved treatment option${fdaDrugs.length > 1 ? 's' : ''}: ${fdaDrugs.slice(0,3).join(', ')}${fdaDrugs.length > 3 ? ', and more' : ''}. Always consult your physician before making any medical decisions.`
     : tier2.trials.length > 0
-    ? `There are ${tier2.trials.length} recruiting clinical trial(s) that may be relevant to your ${gene} variant.`
-    : `No FDA-approved therapies were found specifically for your ${gene} variant, but emerging research programs may be relevant.`
+    ? `No FDA-approved therapies are currently matched to your ${gene} variant, but ${tier2.trials.length} recruiting clinical trial${tier2.trials.length > 1 ? 's' : ''} related to ${gene} may be relevant. Discuss these options with your physician or genetic counselor.`
+    : tier3.pipeline.length > 0
+    ? `No FDA-approved therapies are currently matched to your ${gene} variant. ${tier3.pipeline.length} emerging research program${tier3.pipeline.length > 1 ? 's are' : ' is'} in development. Speak with a specialist about future options.`
+    : `No FDA-approved therapies or matched trials were found for your ${gene} variant at this time. Consider consulting a genetic counselor for personalized guidance.`
 
   return {
     patient_label: 'Patient',
