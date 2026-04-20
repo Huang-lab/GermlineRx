@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   try {
     // MyVariant.info: space-separated gene + hgvs (colon separator returns 0 hits)
     const q = encodeURIComponent(`${geneUpper} ${hgvs}`)
-    const fields = 'gnomad_genome.af.af,gnomad_exome.af.af,dbsnp.rsid,_id'
+    const fields = 'gnomad_genome.af.af,gnomad_exome.af.af,vcf,_id'
     const url = `${MYVARIANT_URL}?q=${q}&fields=${fields}&size=1`
 
     const mvRes = await fetch(url)
@@ -29,18 +29,13 @@ export default async function handler(req, res) {
 
     const af = hit?.gnomad_genome?.af?.af ?? hit?.gnomad_exome?.af?.af ?? null
 
-    // Build gnomAD URL — prefer rsID, then try SNV _id parsing, else gene-level
+    // Build gnomAD URL from vcf field (chrom-pos-ref-alt format)
     let gnomadUrl = geneLevelUrl
-    const rsid = hit?.dbsnp?.rsid
-    if (rsid) {
-      gnomadUrl = `https://gnomad.broadinstitute.org/variant/${rsid}?dataset=gnomad_r2_1`
-    } else {
-      // SNV _id format: "chr7:g.117548628C>T" → "7-117548628-C-T"
-      const snvMatch = (hit._id || '').match(/^chr(\w+):g\.(\d+)([A-Z]+)>([A-Z]+)$/)
-      if (snvMatch) {
-        const [, chr, pos, ref, alt] = snvMatch
-        gnomadUrl = `https://gnomad.broadinstitute.org/variant/${chr}-${pos}-${ref}-${alt}?dataset=gnomad_r2_1`
-      }
+    const vcf = hit?.vcf
+    const chrMatch = (hit._id || '').match(/^chr(\w+):/)
+    if (vcf?.position && vcf?.ref && vcf?.alt && chrMatch) {
+      const chr = chrMatch[1]
+      gnomadUrl = `https://gnomad.broadinstitute.org/variant/${chr}-${vcf.position}-${vcf.ref}-${vcf.alt}?dataset=gnomad_r2_1`
     }
 
     return res.status(200).json({ af, gnomad_url: gnomadUrl })
