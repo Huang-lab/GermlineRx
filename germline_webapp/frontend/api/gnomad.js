@@ -12,11 +12,11 @@ export default async function handler(req, res) {
   if (!gene || !hgvs) return res.status(400).json({ error: 'gene and hgvs required' })
 
   const geneUpper = gene.toUpperCase()
-  const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r4`
+  const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r2_1`
 
   try {
-    // MyVariant.info accepts gene:hgvs directly — no coordinate conversion needed
-    const q = encodeURIComponent(`${geneUpper}:${hgvs}`)
+    // MyVariant.info: space-separated gene + hgvs (colon separator returns 0 hits)
+    const q = encodeURIComponent(`${geneUpper} ${hgvs}`)
     const fields = 'gnomad_genome.af.af,gnomad_exome.af.af,dbsnp.rsid,_id'
     const url = `${MYVARIANT_URL}?q=${q}&fields=${fields}&size=1`
 
@@ -25,19 +25,22 @@ export default async function handler(req, res) {
 
     const mvJson = await mvRes.json()
     const hit = mvJson?.hits?.[0]
-
     if (!hit) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
 
     const af = hit?.gnomad_genome?.af?.af ?? hit?.gnomad_exome?.af?.af ?? null
 
-    // Build gnomAD URL from the variant _id (e.g. "chr7:g.117548628CTT>C")
-    // MyVariant _id format: "chr7:g.117548628CTT>C" → gnomAD wants "7-117548628-CTT-C"
+    // Build gnomAD URL — prefer rsID, then try SNV _id parsing, else gene-level
     let gnomadUrl = geneLevelUrl
-    const variantId = hit?._id || ''
-    const idMatch = variantId.match(/^chr(\w+):g\.(\d+)([A-Z]+)>([A-Z]+)$/)
-    if (idMatch) {
-      const [, chr, pos, ref, alt] = idMatch
-      gnomadUrl = `https://gnomad.broadinstitute.org/variant/${chr}-${pos}-${ref}-${alt}?dataset=gnomad_r2_1`
+    const rsid = hit?.dbsnp?.rsid
+    if (rsid) {
+      gnomadUrl = `https://gnomad.broadinstitute.org/variant/${rsid}?dataset=gnomad_r2_1`
+    } else {
+      // SNV _id format: "chr7:g.117548628C>T" → "7-117548628-C-T"
+      const snvMatch = (hit._id || '').match(/^chr(\w+):g\.(\d+)([A-Z]+)>([A-Z]+)$/)
+      if (snvMatch) {
+        const [, chr, pos, ref, alt] = snvMatch
+        gnomadUrl = `https://gnomad.broadinstitute.org/variant/${chr}-${pos}-${ref}-${alt}?dataset=gnomad_r2_1`
+      }
     }
 
     return res.status(200).json({ af, gnomad_url: gnomadUrl })
