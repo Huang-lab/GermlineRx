@@ -1,5 +1,5 @@
 import type { NormalizeResponse, AnalyzeResponse, UploadResponse } from '../types'
-import { staticNormalize } from '../static-mode/staticEngine'
+import { staticNormalize, staticUploadFile } from '../static-mode/staticEngine'
 
 const BASE = '/api'
 const STATIC_MODE = import.meta.env.VITE_STATIC_MODE === 'true'
@@ -46,6 +46,9 @@ export async function analyzeVariant(
 }
 
 export async function uploadFile(file: File): Promise<UploadResponse> {
+  if (STATIC_MODE) {
+    return staticUploadFile(file)
+  }
   const form = new FormData()
   form.append('file', file)
   const res = await fetch(`${BASE}/upload`, { method: 'POST', body: form })

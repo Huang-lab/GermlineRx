@@ -600,6 +600,123 @@ function deriveOverallStatus(tier1: Tier1Result, tier2: Tier2Result, tier3: Tier
   return 'NOT_ACTIONABLE'
 }
 
+// ─── Static file upload: VCF client-side parser, PDF unsupported ─────────────
+
+import type { UploadResponse, ExtractedVariant } from '../types'
+
+export async function staticUploadFile(file: File): Promise<UploadResponse> {
+  const name = file.name.toLowerCase()
+
+  // PDF: cannot parse client-side without heavy library
+  if (name.endsWith('.pdf')) {
+    return {
+      file_type: 'pdf',
+      variants_found: 0,
+      variants: [],
+      parse_warnings: [
+        'PDF parsing is not available in the browser-only version. ' +
+        'Please use the full version at huggingface.co/spaces/Rita9CoreX/germline-rx, ' +
+        'or enter your variant manually using the text box.',
+      ],
+    }
+  }
+
+  // VCF: plain text — parse client-side
+  if (name.endsWith('.vcf') || name.endsWith('.vcf.gz')) {
+    try {
+      const text = await file.text()
+      return parseVcf(text)
+    } catch {
+      throw new Error('Could not read VCF file. Make sure it is a valid uncompressed VCF (.vcf).')
+    }
+  }
+
+  throw new Error('Unsupported file type. Please upload a VCF (.vcf) file or use the full version for PDF support.')
+}
+
+function parseVcf(text: string): UploadResponse {
+  const variants: ExtractedVariant[] = []
+  const warnings: string[] = []
+  let hasAnnotations = false
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+
+    const cols = line.split('\t')
+    if (cols.length < 5) continue
+
+    const [chrom, pos, _id, ref, altField] = cols
+    const info = cols[7] || ''
+    const alts = altField.split(',')
+
+    // Check for ANN (SnpEff) or CSQ (VEP) annotations
+    const annMatch = info.match(/(?:ANN|CSQ)=([^;]+)/)
+    if (annMatch) hasAnnotations = true
+
+    for (const alt of alts) {
+      if (alt === '.' || alt === '*') continue
+
+      let gene = 'UNKNOWN'
+      let hgvs = `g.${pos}${ref}>${alt}`
+      let classification: string | null = null
+
+      // Parse SnpEff ANN field: ANN=alt|effect|impact|gene|geneid|...
+      if (annMatch) {
+        const entries = annMatch[1].split(',')
+        for (const entry of entries) {
+          const parts = entry.split('|')
+          if (parts[0] === alt || alts.length === 1) {
+            if (parts[3]) gene = parts[3]
+            if (parts[9]) hgvs = parts[9]   // c. notation
+            if (parts[2]) classification = parts[2]  // impact: HIGH/MODERATE/LOW
+            break
+          }
+        }
+      }
+
+      // Parse VEP CSQ field: CSQ=alt|...|SYMBOL|...|HGVSc|...
+      const csqMatch = info.match(/CSQ=([^;]+)/)
+      if (csqMatch && gene === 'UNKNOWN') {
+        const entry = csqMatch[1].split(',')[0].split('|')
+        // VEP CSQ column indices vary by header — try common positions
+        if (entry[3]) gene = entry[3]
+        if (entry[10]) hgvs = entry[10] || hgvs
+      }
+
+      // Filter for HIGH/MODERATE impact or keep all if no annotations
+      const isHighImpact = !classification || ['HIGH', 'MODERATE'].includes(classification)
+      if (!isHighImpact) continue
+
+      const chr = chrom.replace(/^chr/i, '')
+      variants.push({
+        gene,
+        hgvs,
+        confidence: classification === 'HIGH' ? 'HIGH' : classification === 'MODERATE' ? 'MEDIUM' : 'LOW',
+        raw_text: `chr${chr}:${pos} ${ref}>${alt}`,
+        classification: classification || null,
+      })
+
+      if (variants.length >= 20) break
+    }
+    if (variants.length >= 20) break
+  }
+
+  if (!hasAnnotations && variants.length > 0) {
+    warnings.push('VCF has no gene annotations (ANN/CSQ fields). Gene names shown as UNKNOWN. For best results, use a SnpEff or VEP annotated VCF.')
+  }
+  if (variants.length === 0) {
+    warnings.push('No variants with HIGH or MODERATE impact found in this VCF file.')
+  }
+
+  return {
+    file_type: 'vcf',
+    variants_found: variants.length,
+    variants,
+    parse_warnings: warnings,
+  }
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
 export async function staticAnalyze(

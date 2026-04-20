@@ -102,13 +102,24 @@ export default function App() {
                 {results.gene} {results.hgvs}
               </span>
             )}
-            <a
-              href="http://localhost:8000/docs"
-              target="_blank" rel="noopener noreferrer"
-              className="text-xs text-brand-600 hover:underline"
-            >
-              API Docs
-            </a>
+            {!STATIC_MODE && (
+              <a
+                href="http://localhost:8000/docs"
+                target="_blank" rel="noopener noreferrer"
+                className="text-xs text-brand-600 hover:underline"
+              >
+                API Docs
+              </a>
+            )}
+            {STATIC_MODE && (
+              <a
+                href="https://huggingface.co/spaces/Rita9CoreX/germline-rx"
+                target="_blank" rel="noopener noreferrer"
+                className="text-xs text-brand-600 hover:underline"
+              >
+                Full version ↗
+              </a>
+            )}
           </div>
         </div>
       </header>
@@ -205,7 +216,8 @@ export default function App() {
             <div className="mb-4 text-sm text-gray-500 bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
               <p>
                 <span className="font-medium text-gray-700">GermlineRx</span> matched your variant against FDA-approved therapies,
-                recruiting clinical trials, emerging research programs, and Biomni biomedical databases.
+                recruiting clinical trials, and emerging research programs.
+                {!STATIC_MODE && ' Enrichment data from Biomni biomedical databases.'}
               </p>
               <button
                 onClick={() => setResults(null)}
