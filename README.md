@@ -116,7 +116,12 @@ GermlineRx/
 ├── scripts/
 │   └── export_kb_to_json.py          # Export KBs to JSON for static mode
 ├── vercel.json                        # Vercel frontend deploy config
-├── germline_webapp/backend/render.yaml  # Render.com backend deploy config
+├── huggingface/                       # HuggingFace Spaces backend deploy
+│   ├── Dockerfile                     # Docker config for HF Space
+│   ├── startup.sh                     # Downloads datalake + starts uvicorn
+│   ├── download_datalake.py           # Pulls Biomni data from HF Datasets
+│   ├── requirements.txt
+│   └── DEPLOY.md                      # Step-by-step deploy guide
 └── .github/workflows/deploy.yml      # Auto-deploy to GitHub Pages
 ```
 
@@ -130,30 +135,26 @@ Live at: **https://huang-lab.github.io/GermlineRx**
 
 Tier 1 and Tier 3 run from bundled JSON. Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly from the browser. Enrichment not available.
 
-### Option 2 — Vercel + Render (full stack, all features)
+### Option 2 — Vercel + Hugging Face Spaces (full stack, all features, always-on)
 
 **Architecture:**
 ```
-Browser → Vercel (React frontend) → Render.com (FastAPI backend)
+Browser → Vercel (React frontend) → HF Spaces (FastAPI backend, Docker)
                                          ├── ClinVar API
                                          ├── gnomAD API
                                          └── ClinicalTrials.gov API
 ```
 
-**Backend on Render.com** (free tier):
-1. New Web Service → connect `Huang-lab/GermlineRx`
-2. Root directory: `germline_webapp/backend`
-3. Build: `pip install -r requirements.txt`
-4. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-5. Env var: `CORS_ORIGINS=https://germline-rx.vercel.app`
+See **[huggingface/DEPLOY.md](huggingface/DEPLOY.md)** for the complete step-by-step deployment guide.
 
-**Frontend on Vercel** (free):
-1. Import `Huang-lab/GermlineRx`
-2. Root directory: `germline_webapp/frontend`
-3. Build: `npm run build` (no VITE_STATIC_MODE)
-4. Output: `dist`
+**Quick summary:**
+1. Create a HuggingFace Space (Docker SDK) at huggingface.co/new-space
+2. Push the `huggingface/` folder + `germline_webapp/backend/app/` to the Space repo
+3. Set Space secret: `CORS_ORIGINS=https://germline-rx.vercel.app`
+4. Deploy frontend on Vercel — root directory: `germline_webapp/frontend`
+5. Update `germline_webapp/frontend/vercel.json` with your HF Space URL
 
-The `vercel.json` in the frontend directory automatically proxies `/api/*` calls to the Render backend — no code changes needed.
+**Total cost: $0. No cold starts.**
 
 ---
 

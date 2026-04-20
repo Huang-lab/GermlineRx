@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://germline-rx-api.onrender.com/api/$1"
+      "destination": "https://YOUR_HF_USERNAME-germline-rx.hf.space/api/$1"
     }
   ]
 }
