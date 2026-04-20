@@ -267,11 +267,8 @@ function EnrichmentSection({ enrichment }: { enrichment: EnrichmentResult }) {
     enrichment.omim?.mim_number ||
     enrichment.orphan?.rare_diseases?.length > 0 ||
     enrichment.orphan?.orphan_drugs?.length > 0 ||
-    enrichment.gwas_associations?.length > 0 ||
     enrichment.broad_hub_drugs?.length > 0 ||
-    enrichment.ddi_flags?.length > 0 ||
-    enrichment.ppi_partners?.length > 0 ||
-    enrichment.disgenet_diseases?.length > 0
+    enrichment.ddi_flags?.length > 0
 
   if (!hasData) return null
 
@@ -357,30 +354,6 @@ function EnrichmentSection({ enrichment }: { enrichment: EnrichmentResult }) {
           </div>
         )}
 
-        {/* GWAS Associations */}
-        {enrichment.gwas_associations?.length > 0 && (
-          <div>
-            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">GWAS Trait Associations</h4>
-            <div className="space-y-1">
-              {enrichment.gwas_associations.map((g, i) => (
-                <div key={i} className="flex items-center justify-between text-xs bg-white border border-gray-200 rounded px-3 py-1.5 gap-2">
-                  <span className="text-gray-800 capitalize">{g.trait}</span>
-                  <div className="flex items-center gap-2 text-gray-400 shrink-0">
-                    <span>p={g.p_value}</span>
-                    {g.pubmed_id && (
-                      <a href={`https://pubmed.ncbi.nlm.nih.gov/${g.pubmed_id}`}
-                         target="_blank" rel="noopener noreferrer"
-                         className="text-brand-600 hover:underline">
-                        PMID:{g.pubmed_id}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Broad Hub Drug Repurposing */}
         {enrichment.broad_hub_drugs?.length > 0 && (
           <div>
@@ -399,34 +372,6 @@ function EnrichmentSection({ enrichment }: { enrichment: EnrichmentResult }) {
                     <p className="text-gray-500 mt-0.5">{d.moa}</p>
                   )}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Protein-Protein Interactions */}
-        {enrichment.ppi_partners?.length > 0 && (
-          <div>
-            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">Protein Interaction Partners (BioGRID)</h4>
-            <div className="flex flex-wrap gap-1.5">
-              {enrichment.ppi_partners.map((p, i) => (
-                <span key={i} className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded font-mono">
-                  {p}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* DisGeNET Diseases */}
-        {enrichment.disgenet_diseases?.length > 0 && (
-          <div>
-            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">DisGeNET Disease Associations</h4>
-            <div className="flex flex-wrap gap-1.5">
-              {enrichment.disgenet_diseases.map((d, i) => (
-                <span key={i} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
-                  {d}
-                </span>
               ))}
             </div>
           </div>
