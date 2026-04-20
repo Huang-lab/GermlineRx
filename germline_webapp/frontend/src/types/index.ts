@@ -15,6 +15,7 @@ export interface Tier0Result {
   review_status: string
   gnomad_af: number | null
   gnomad_interpretation: string
+  gnomad_url?: string | null
   clinvar_id: string | null
   clingen_note: string | null
 }

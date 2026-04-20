@@ -6,7 +6,7 @@ const STATIC_MODE = import.meta.env.VITE_STATIC_MODE === 'true'
 
 export async function normalizeVariant(disease: string, mutationText: string): Promise<NormalizeResponse> {
   if (STATIC_MODE) {
-    return staticNormalize(disease, mutationText)
+    return await staticNormalize(disease, mutationText)
   }
   const res = await fetch(`${BASE}/normalize`, {
     method: 'POST',

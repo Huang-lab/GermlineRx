@@ -90,7 +90,22 @@ export default function ResultsPanel({ data, onReset }: Props) {
           <InfoRow label="Classification" value={data.tier0.classification} />
           <InfoRow label="Review Status" value={data.tier0.review_status} />
           {data.tier0.gnomad_af !== null && (
-            <InfoRow label="gnomAD AF" value={data.tier0.gnomad_af.toFixed(4)} />
+            <InfoRow label="gnomAD AF" value={
+              data.tier0.gnomad_url
+                ? <a href={data.tier0.gnomad_url} target="_blank" rel="noopener noreferrer"
+                     className="text-brand-600 hover:underline">
+                    {data.tier0.gnomad_af.toFixed(4)} ↗
+                  </a>
+                : data.tier0.gnomad_af.toFixed(4)
+            } />
+          )}
+          {data.tier0.gnomad_af === null && data.tier0.gnomad_url && (
+            <InfoRow label="gnomAD" value={
+              <a href={data.tier0.gnomad_url} target="_blank" rel="noopener noreferrer"
+                 className="text-brand-600 hover:underline">
+                View on gnomAD ↗
+              </a>
+            } />
           )}
           <InfoRow label="Population" value={data.tier0.gnomad_interpretation} />
           {data.tier0.clinvar_id && (
