@@ -3,8 +3,8 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  // Use /GermlineRx/ base path when building for GitHub Pages
-  base: mode === 'production' ? '/GermlineRx/' : '/',
+  // GitHub Pages needs /GermlineRx/ base; Vercel uses /
+  base: process.env.VERCEL ? '/' : (mode === 'production' ? '/GermlineRx/' : '/'),
   server: {
     port: 5173,
     proxy: {
