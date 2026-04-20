@@ -142,19 +142,38 @@ export default function App() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
               {/* Tabs */}
               <div className="flex border-b border-gray-200">
-                {(['manual', 'upload'] as Tab[]).map(t => (
+                <button
+                  className={`flex-1 py-3 text-sm font-medium transition ${
+                    tab === 'manual'
+                      ? 'text-brand-600 border-b-2 border-brand-600 bg-white'
+                      : 'text-gray-500 hover:text-gray-700 bg-gray-50'
+                  }`}
+                  onClick={() => setTab('manual')}
+                >
+                  ✏️ Enter Mutation
+                </button>
+                {!STATIC_MODE && (
                   <button
-                    key={t}
                     className={`flex-1 py-3 text-sm font-medium transition ${
-                      tab === t
+                      tab === 'upload'
                         ? 'text-brand-600 border-b-2 border-brand-600 bg-white'
                         : 'text-gray-500 hover:text-gray-700 bg-gray-50'
                     }`}
-                    onClick={() => setTab(t)}
+                    onClick={() => setTab('upload')}
                   >
-                    {t === 'manual' ? '✏️ Enter Mutation' : '📄 Upload Report'}
+                    📄 Upload Report
                   </button>
-                ))}
+                )}
+                {STATIC_MODE && (
+                  <a
+                    href="https://huggingface.co/spaces/Rita9CoreX/germline-rx"
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex-1 py-3 text-sm font-medium text-gray-400 bg-gray-50 text-center hover:text-brand-600 transition"
+                    title="PDF parsing available in the full version"
+                  >
+                    📄 Upload Report ↗
+                  </a>
+                )}
               </div>
 
               <div className="p-6">
