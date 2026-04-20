@@ -45,3 +45,6 @@ germline_webapp/backend/*.db
 germline_webapp/frontend/src/static-mode/tier1_kb.json
 germline_webapp/frontend/src/static-mode/tier3_kb.json
 germline_webapp/frontend/src/static-mode/alias_table.json
+
+# Private project notes — not for public repo
+CLAUDE.md
