@@ -551,8 +551,7 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
       'https://clinicaltrials.gov/api/v2/studies',
       `?query.term=${query}`,
       `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
-      `&filter.phase=PHASE1,PHASE2,EARLY_PHASE1`,
-      `&pageSize=10&format=json`,
+      `&pageSize=20&format=json`,
     ].join('')
 
     const res = await fetch(url)
@@ -560,10 +559,13 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
     const studies: RawStudy[] = json?.studies || []
     const relevant = filterRelevantStudies(studies, gene)
 
+    const EARLY_PHASES = new Set(['PHASE1', 'PHASE2', 'EARLY_PHASE1', 'NA'])
     const pipeline: PipelineEntry[] = relevant
       .filter(s => {
         const nctId = s.protocolSection?.identificationModule?.nctId || ''
-        return !tier2NctIds.has(nctId)
+        if (tier2NctIds.has(nctId)) return false
+        const phases: string[] = s.protocolSection?.designModule?.phases || []
+        return phases.length === 0 || phases.some((ph: string) => EARLY_PHASES.has(ph))
       })
       .map(s => {
         const p = s.protocolSection || {}
