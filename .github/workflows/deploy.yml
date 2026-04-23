@@ -28,20 +28,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          python-version-file: '' # suppress warning
-
-      - name: Install Python dependencies
-        run: |
-          pip install -r germline_webapp/backend/requirements.txt
-
-      - name: Export knowledge bases to JSON
-        run: |
-          python scripts/export_kb_to_json.py
-
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
