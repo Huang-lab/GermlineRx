@@ -4,8 +4,9 @@ GermlineRx translates a germline genetic variant into actionable clinical intell
 
 | Deployment | URL | Mode |
 |------------|-----|------|
-| GitHub Pages (static) | [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx) | Browser-only, no backend needed |
-| HuggingFace Spaces (full) | [Rita9CoreX-germline-rx.hf.space](https://Rita9CoreX-germline-rx.hf.space) | All features, full backend |
+| Vercel (static, recommended) | [germline-rx.vercel.app](https://germline-rx.vercel.app) | Browser-only, live APIs, auto-deploys on push |
+| GitHub Pages (static) | [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx) | Browser-only, live APIs |
+| HuggingFace Spaces (full) | [Rita9CoreX-germline-rx.hf.space](https://Rita9CoreX-germline-rx.hf.space) | All features, full backend + enrichment |
 
 ---
 
@@ -113,8 +114,8 @@ GermlineRx/
 │           ├── App.tsx
 │           ├── components/            # Input forms, results panels, trial cards
 │           └── static-mode/           # Browser-only engine (GitHub Pages)
-├── scripts/
-│   └── export_kb_to_json.py          # Exports KBs to JSON for static mode
+├── api/
+│   └── gnomad.js                     # Vercel serverless function — gnomAD proxy (avoids CORS)
 └── .github/workflows/deploy.yml      # Auto-deploy to GitHub Pages on push
 ```
 
@@ -122,10 +123,15 @@ GermlineRx/
 
 ## Hosting
 
-### GitHub Pages (static, no backend)
+### Vercel (static, recommended)
+Auto-deploys on every push to `main`. Live at **https://germline-rx.vercel.app**
+
+All tiers use live APIs — no Python, no JSON files, no pre-build step. Tier 0 calls ClinVar + gnomAD (via a Vercel serverless proxy to avoid CORS), Tier 1 calls DGIdb, Tier 2/3 call ClinicalTrials.gov. Enrichment not available.
+
+### GitHub Pages (static)
 Auto-deploys on every push to `main`. Live at **https://huang-lab.github.io/GermlineRx**
 
-Tier 1 and Tier 3 run from bundled JSON. Tier 0 and Tier 2 call ClinVar and ClinicalTrials.gov directly from the browser. Enrichment not available.
+Same browser-only engine as Vercel. Note: gnomAD variant-level AF requires the Vercel serverless proxy (`/api/gnomad`) — on GitHub Pages it falls back to curated values. Enrichment not available.
 
 ### HuggingFace Spaces (full stack)
 Full backend served via Docker at **https://Rita9CoreX-germline-rx.hf.space**
