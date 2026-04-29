@@ -65,8 +65,9 @@ async def analyze(req: AnalyzeRequest):
             # Tier 2 — clinical trials (async)
             tier2 = await match_tier2(gene, hgvs, fc, disease, age)
 
-            # Tier 3 — emerging pipeline
-            tier3 = match_tier3(gene)
+            # Tier 3 — emerging pipeline (live CT.gov Phase 1/2 + curated preclinical)
+            tier2_nct_ids = {t["nct_id"] for t in tier2.get("trials", [])}
+            tier3 = await match_tier3(gene, tier2_nct_ids)
 
         # Enrichment — Biomni datalake (no API keys needed)
         tier1_drug_names = [d["drug_name"] for d in tier1.get("drugs", [])]

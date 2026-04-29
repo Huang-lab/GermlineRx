@@ -1,10 +1,48 @@
 """
 GermlineRx — Tier 3: Emerging Pipeline
-Curated knowledge base of gene therapy, ASO, CRISPR, mRNA, and RNAi programs
-not yet approved but in active development.
+Live ClinicalTrials.gov Phase 1/2 (non-recruiting) + curated preclinical programs.
 """
 from __future__ import annotations
+import logging
+import httpx
+from urllib.parse import quote
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+CT_API = "https://clinicaltrials.gov/api/v2/studies"
+
+# Gene → search terms (reused from tier2 SEARCH_TERMS, kept in sync)
+_SEARCH_TERMS: dict[str, str] = {
+    "CFTR":   "cystic fibrosis CFTR modulator",
+    "DMD":    "Duchenne muscular dystrophy gene therapy",
+    "SOD1":   "SOD1 ALS antisense",
+    "SMN1":   "spinal muscular atrophy SMN",
+    "BRCA1":  "BRCA1 PARP inhibitor hereditary breast",
+    "BRCA2":  "BRCA2 PARP inhibitor hereditary breast",
+    "MLH1":   "Lynch syndrome MLH1 mismatch repair",
+    "MSH2":   "Lynch syndrome MSH2 mismatch repair",
+    "MSH6":   "Lynch syndrome MSH6",
+    "TTR":    "transthyretin amyloidosis TTR gene silencing",
+    "HBB":    "sickle cell disease gene therapy HBB",
+    "LDLR":   "familial hypercholesterolemia LDLR",
+    "MYBPC3": "hypertrophic cardiomyopathy mavacamten MYBPC3",
+    "MYH7":   "hypertrophic cardiomyopathy MYH7",
+    "NF1":    "neurofibromatosis NF1 selumetinib",
+    "VHL":    "von Hippel-Lindau VHL belzutifan",
+    "RET":    "MEN2 RET medullary thyroid",
+    "GBA":    "Gaucher disease GBA",
+    "HTT":    "Huntington disease HTT antisense",
+    "FXN":    "Friedreich ataxia FXN frataxin",
+    "F8":     "hemophilia A gene therapy factor VIII",
+    "F9":     "hemophilia B gene therapy factor IX",
+    "TP53":   "Li-Fraumeni syndrome TP53 germline",
+    "PALB2":  "PALB2 hereditary breast cancer PARP",
+    "ATM":    "ATM breast cancer PARP inhibitor",
+    "CHEK2":  "CHEK2 hereditary breast cancer",
+}
+
+_EARLY_PHASES = {"PHASE1", "PHASE2", "EARLY_PHASE1", "PHASE1_2"}
 
 PIPELINE_KB: list[dict] = [
     {
@@ -141,10 +179,22 @@ PIPELINE_KB: list[dict] = [
 ]
 
 
-def match_tier3(gene: str) -> dict:
-    """Return emerging pipeline entries for the given gene."""
+_STAGE_ORDER = {
+    "Phase 3": 0, "Phase 2/3": 1, "Phase 2": 2,
+    "Phase 1/2": 3, "Phase 1": 4, "Preclinical": 5,
+}
+
+
+async def match_tier3(gene: str, tier2_nct_ids: set[str] | None = None) -> dict:
+    """Return emerging pipeline: live Phase 1/2 trials + curated preclinical programs."""
     gene_upper = gene.upper()
-    pipeline = [
+    tier2_ids = tier2_nct_ids or set()
+
+    # 1. Live ClinicalTrials.gov Phase 1/2 (not yet recruiting / active not recruiting)
+    live_entries = await _fetch_live_pipeline(gene_upper, tier2_ids)
+
+    # 2. Curated KB — preclinical only (these have no NCT number, can't come from CT.gov)
+    curated = [
         {
             "gene": e["gene"],
             "approach": e["approach"],
@@ -157,5 +207,63 @@ def match_tier3(gene: str) -> dict:
         }
         for e in PIPELINE_KB
         if e["gene"].upper() == gene_upper
+        and "preclinical" in e.get("stage", "").lower()
     ]
+
+    pipeline = live_entries + curated
+    pipeline.sort(key=lambda e: _STAGE_ORDER.get(e["stage"], 6))
     return {"pipeline": pipeline}
+
+
+async def _fetch_live_pipeline(gene: str, tier2_nct_ids: set[str]) -> list[dict]:
+    """Fetch Phase 1/2 non-recruiting trials from ClinicalTrials.gov."""
+    search_term = _SEARCH_TERMS.get(gene, f"{gene} genetic disease")
+    params = {
+        "query.term": search_term,
+        "filter.overallStatus": "NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING",
+        "pageSize": 20,
+        "format": "json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(CT_API, params=params)
+            r.raise_for_status()
+            studies = r.json().get("studies", [])
+    except Exception as e:
+        logger.warning(f"Tier 3 ClinicalTrials fetch failed for {gene}: {e}")
+        return []
+
+    entries = []
+    for s in studies:
+        proto = s.get("protocolSection", {})
+        id_mod = proto.get("identificationModule", {})
+        design_mod = proto.get("designModule", {})
+        arms_mod = proto.get("armsInterventionsModule", {})
+        sponsor_mod = proto.get("sponsorCollaboratorsModule", {})
+
+        nct_id = id_mod.get("nctId", "")
+        if not nct_id or nct_id in tier2_nct_ids:
+            continue
+
+        # Client-side phase filter
+        phases = design_mod.get("phases", [])
+        phase_keys = {p.replace("/", "_").replace(" ", "").upper() for p in phases}
+        if phases and not phase_keys.intersection(_EARLY_PHASES):
+            continue
+
+        interventions = [i.get("name", "") for i in arms_mod.get("interventions", [])]
+        sponsor = sponsor_mod.get("leadSponsor", {}).get("name", "Unknown sponsor")
+        phase_str = "/".join(phases) if phases else "Phase 1/2"
+
+        entries.append({
+            "gene": gene,
+            "approach": interventions[0] if interventions else "Investigational therapy",
+            "description": id_mod.get("briefTitle", "See ClinicalTrials.gov for details"),
+            "stage": phase_str,
+            "target": None,
+            "key_programs": [sponsor, f"NCT: {nct_id}"],
+            "caveat": f"{nct_id} — not yet recruiting or actively enrolling; not open for new patients",
+            "n_of_1_flag": False,
+        })
+
+    return entries

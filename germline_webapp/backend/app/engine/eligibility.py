@@ -132,7 +132,8 @@ def extract_criteria(eligibility_text: str) -> EligibilityCriteria:
     return criteria
 
 
-def check_eligibility(criteria: EligibilityCriteria, patient: dict) -> dict:
+def check_eligibility(criteria: EligibilityCriteria, patient: dict,
+                      structured: Optional[dict] = None) -> dict:
     """
     Check patient profile against extracted criteria.
     Returns dict with criterion_checks list and overall eligibility label.
@@ -141,6 +142,30 @@ def check_eligibility(criteria: EligibilityCriteria, patient: dict) -> dict:
     gene = patient.get("gene", "").upper()
     fc = patient.get("functional_class")
     age = patient.get("age")
+    s = structured or {}
+
+    # ── Structured age (override regex-extracted age_min/age_max if available) ─
+    if s.get("min_age") is not None:
+        criteria.age_min = s["min_age"]
+    if s.get("max_age") is not None:
+        criteria.age_max = s["max_age"]
+
+    # ── Sex restriction (structured field) ────────────────────────────────────
+    sex = (s.get("sex") or "ALL").upper()
+    if sex in ("MALE", "FEMALE"):
+        checks.append(_check(
+            f"{'Male' if sex == 'MALE' else 'Female'} participants only",
+            "UNKNOWN",
+            f"This trial enrolls {sex.lower()} participants only — verify with your care team",
+        ))
+
+    # ── Healthy volunteers (structured field) ─────────────────────────────────
+    if s.get("healthy_volunteers") is True:
+        checks.append(_check(
+            "Healthy volunteers only",
+            "WARNING",
+            "This trial enrolls healthy volunteers — not patients with the condition",
+        ))
 
     # ── Gene match ────────────────────────────────────────────────────────────
     if criteria.required_genes:

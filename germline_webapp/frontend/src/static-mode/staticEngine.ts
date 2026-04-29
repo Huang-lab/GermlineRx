@@ -471,25 +471,81 @@ type RawStudy = {
     designModule?: { phases?: string[] }
     conditionsModule?: { conditions?: string[] }
     armsInterventionsModule?: { interventions?: Array<{ name?: string }> }
-    eligibilityModule?: { eligibilityCriteria?: string; minimumAge?: string; maximumAge?: string }
+    eligibilityModule?: { eligibilityCriteria?: string; minimumAge?: string; maximumAge?: string; sex?: string; healthyVolunteers?: boolean; stdAges?: string[] }
     contactsLocationsModule?: { centralContacts?: Array<{ name?: string; email?: string; phone?: string }> }
     sponsorCollaboratorsModule?: { leadSponsor?: { name?: string } }
   }
 }
 
-function mapStudyToTrial(s: RawStudy, age: number | null): TrialResult {
+function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string): TrialResult {
   const p = s.protocolSection || {}
   const id = p.identificationModule || {}
   const elig = p.eligibilityModule || {}
   const contacts = p.contactsLocationsModule?.centralContacts || []
   const nctId = id.nctId || 'N/A'
 
-  let eligOverall: TrialResult['eligibility_overall'] = 'CHECK_WITH_DOCTOR'
+  const minAge = parseAgeYears(elig.minimumAge || '0 years')
+  const maxAge = parseAgeYears(elig.maximumAge || '120 years')
+  const sex = (elig.sex || 'ALL').toUpperCase()
+  const healthyOnly = elig.healthyVolunteers === true
+  const criteriaText = (elig.eligibilityCriteria || '').toLowerCase()
+  const geneUpper = (gene || '').toUpperCase()
+
+  const checks: import('../types').CriterionCheck[] = []
+  let ineligible = false
+
+  // Age check (structured field — reliable)
   if (age !== null) {
-    const minAge = parseAgeYears(elig.minimumAge || '0 years')
-    const maxAge = parseAgeYears(elig.maximumAge || '120 years')
-    eligOverall = (age >= minAge && age <= maxAge) ? 'LIKELY_ELIGIBLE' : 'CHECK_WITH_DOCTOR'
+    const ageMet = age >= minAge && age <= maxAge
+    checks.push({
+      criterion: `Age ${minAge}–${maxAge} years`,
+      status: ageMet ? 'MET' : 'NOT_MET',
+      explanation: ageMet
+        ? `Patient age ${age} is within range`
+        : `Patient age ${age} is outside required range (${minAge}–${maxAge})`,
+    })
+    if (!ageMet) ineligible = true
   }
+
+  // Sex check (structured field)
+  if (sex === 'MALE' || sex === 'FEMALE') {
+    checks.push({
+      criterion: `${sex === 'MALE' ? 'Male' : 'Female'} participants only`,
+      status: 'UNKNOWN',
+      explanation: `This trial enrolls ${sex.toLowerCase()} participants only — verify with your care team`,
+    })
+  }
+
+  // Healthy volunteers check
+  if (healthyOnly) {
+    checks.push({
+      criterion: 'Healthy volunteers only',
+      status: 'WARNING',
+      explanation: 'This trial enrolls healthy volunteers, not patients with the condition',
+    })
+  }
+
+  // Gene mention in criteria (free-text — informational)
+  if (geneUpper && criteriaText.includes(geneUpper.toLowerCase())) {
+    checks.push({
+      criterion: `${geneUpper} gene mentioned in eligibility`,
+      status: 'MET',
+      explanation: `Trial criteria specifically reference ${geneUpper}`,
+    })
+  }
+
+  let eligOverall: TrialResult['eligibility_overall'] = 'CHECK_WITH_DOCTOR'
+  if (ineligible) {
+    eligOverall = 'INELIGIBLE'
+  } else if (age !== null && checks.some(c => c.criterion.startsWith('Age') && c.status === 'MET')) {
+    eligOverall = sex === 'ALL' ? 'LIKELY_ELIGIBLE' : 'CHECK_WITH_DOCTOR'
+  }
+
+  const plainParts: string[] = []
+  if (age !== null) plainParts.push(ineligible ? `Age ${age} is outside the required range.` : `Age ${age} meets the age requirement.`)
+  if (sex !== 'ALL') plainParts.push(`Enrolls ${sex.toLowerCase()} participants only.`)
+  if (healthyOnly) plainParts.push('For healthy volunteers only.')
+  plainParts.push('Review full criteria on ClinicalTrials.gov.')
 
   return {
     nct_id: nctId,
@@ -499,8 +555,8 @@ function mapStudyToTrial(s: RawStudy, age: number | null): TrialResult {
     interventions: (p.armsInterventionsModule?.interventions || []).map((i: { name?: string }) => i.name || '').filter(Boolean),
     relevance_score: 50,
     eligibility_overall: eligOverall,
-    eligibility_plain: 'Review full eligibility criteria on ClinicalTrials.gov',
-    criterion_checks: [],
+    eligibility_plain: plainParts.join(' '),
+    criterion_checks: checks,
     contact_name: contacts[0]?.name || null,
     contact_email: contacts[0]?.email || null,
     contact_phone: contacts[0]?.phone || null,
@@ -533,7 +589,7 @@ async function fetchTier2(gene: string, disease: string, age: number | null): Pr
     const json = await res.json()
     const studies: RawStudy[] = json?.studies || []
     const relevant = filterRelevantStudies(studies, gene)
-    const trials = relevant.map(s => mapStudyToTrial(s, age))
+    const trials = relevant.map(s => mapStudyToTrial(s, age, gene))
     return { trials, total_fetched: studies.length, total_after_scoring: relevant.length }
   } catch {
     return { trials: [], total_fetched: 0, total_after_scoring: 0 }

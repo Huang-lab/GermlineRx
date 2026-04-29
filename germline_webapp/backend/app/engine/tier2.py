@@ -4,6 +4,7 @@ Fetches recruiting trials from ClinicalTrials.gov v2 API, scores relevance,
 extracts eligibility criteria via NLP, and checks patient eligibility.
 """
 from __future__ import annotations
+import asyncio
 import logging
 import httpx
 from typing import Optional, List
@@ -56,10 +57,15 @@ async def match_tier2(gene: str, hgvs: str, functional_class: Optional[str],
     patient = {"gene": gene.upper(), "hgvs": hgvs, "functional_class": functional_class,
                "age": age, "disease": disease}
 
-    # Fetch candidates across all search terms
+    # Fetch candidates across search terms in parallel (limit 3 to avoid rate limiting)
     all_trials: dict[str, dict] = {}
-    for term in search_terms[:3]:  # limit to 3 terms to avoid rate limiting
-        trials = await _fetch_trials(term)
+    results_lists = await asyncio.gather(
+        *[_fetch_trials(term) for term in search_terms[:3]],
+        return_exceptions=True,
+    )
+    for trials in results_lists:
+        if isinstance(trials, Exception):
+            continue
         for t in trials:
             nct = t.get("protocolSection", {}).get("identificationModule", {}).get("nctId", "")
             if nct and nct not in all_trials:
@@ -102,9 +108,8 @@ async def _fetch_trials(search_term: str) -> list[dict]:
         params = {
             "query.term": search_term,
             "filter.overallStatus": "RECRUITING",
-            "pageSize": 20,
-            "fields": "NCTId,BriefTitle,Phase,EligibilityCriteria,InterventionName,"
-                      "Condition,CentralContact,OverallStatus,BriefSummary",
+            "pageSize": 25,
+            "format": "json",
         }
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(CT_API, params=params)
@@ -190,11 +195,36 @@ def _build_trial_result(trial: dict, score: float, patient: dict) -> dict:
 
     elig_text = elig_mod.get("eligibilityCriteria", "")
     criteria = extract_criteria(elig_text)
-    elig_result = check_eligibility(criteria, patient)
 
-    # Contact info
+    # Parse structured age fields — more reliable than regex on free text
+    def _parse_age_years(s: str) -> Optional[int]:
+        import re as _re
+        m = _re.match(r"(\d+)\s*(year|month|week)", s or "", _re.I)
+        if not m:
+            return None
+        n, unit = int(m.group(1)), m.group(2).lower()
+        if unit.startswith("month"):
+            return n // 12
+        if unit.startswith("week"):
+            return n // 52
+        return n
+
+    structured = {
+        "min_age": _parse_age_years(elig_mod.get("minimumAge", "")),
+        "max_age": _parse_age_years(elig_mod.get("maximumAge", "")),
+        "sex": elig_mod.get("sex", "ALL"),
+        "healthy_volunteers": elig_mod.get("healthyVolunteers"),
+    }
+    elig_result = check_eligibility(criteria, patient, structured=structured)
+
+    # Contact info — prefer central contacts, fall back to first site contact
     central_contacts = contacts_mod.get("centralContacts", [])
-    contact = central_contacts[0] if central_contacts else {}
+    if central_contacts:
+        contact = central_contacts[0]
+    else:
+        locations = contacts_mod.get("locations", [])
+        site_contacts = locations[0].get("contacts", []) if locations else []
+        contact = site_contacts[0] if site_contacts else {}
 
     return {
         "nct_id": nct_id,
