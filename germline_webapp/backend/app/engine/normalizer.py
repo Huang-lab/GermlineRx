@@ -40,7 +40,7 @@ ALIAS_TABLE: dict[str, dict] = {
     # Exon 45 deletion: HGVS coordinates for exon 45 (c.6439-?_6912+?del is exon 50; exon 45 = c.6614-?_6912+?del approx)
     "exon 45 deletion": {"gene": "DMD",  "hgvs": "c.6614-?_6912+?del", "display": "Exon 45 del", "fc": "exon45_skippable", "note": "Exon 45 deletion — amenable to exon 45 skipping (casimersen)"},
     # ── SOD1 ──────────────────────────────────────────────────────────────────
-    "a4v":              {"gene": "SOD1", "hgvs": "c.11C>T",         "display": "A4V",        "fc": "sod1_als",         "note": "A4V — most common SOD1 ALS variant in North America; aggressive course"},
+    "a4v":              {"gene": "SOD1", "hgvs": "c.14C>T",         "display": "A4V",        "fc": "sod1_als",         "note": "A4V — most common SOD1 ALS variant in North America; aggressive course"},
     "d91a":             {"gene": "SOD1", "hgvs": "c.272A>C",        "display": "D91A",       "fc": "sod1_als",         "note": "D91A — SOD1 ALS variant; slower progression when homozygous"},
     "i113t":            {"gene": "SOD1", "hgvs": "c.338T>C",        "display": "I113T",      "fc": "sod1_als",         "note": "I113T — SOD1 ALS variant; variable penetrance"},
     "l38v":             {"gene": "SOD1", "hgvs": "c.112C>G",        "display": "L38V",       "fc": "sod1_als",         "note": "L38V — SOD1 ALS variant"},

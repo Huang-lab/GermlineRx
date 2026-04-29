@@ -16,21 +16,26 @@ export default async function handler(req, res) {
   const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r4`
 
   try {
-    // Step 1: MyVariant.info with assembly=hg38 → GRCh38 VCF coordinates
+    // Step 1: MyVariant.info with assembly=hg38 → GRCh38 VCF coords + ClinVar ID
     const q = encodeURIComponent(`${geneUpper} ${hgvs}`)
     const mvRes = await fetch(
-      `${MYVARIANT_URL}?q=${q}&fields=vcf,_id&assembly=hg38&size=1`
+      `${MYVARIANT_URL}?q=${q}&fields=vcf,_id,clinvar.variant_id&assembly=hg38&size=1`
     )
-    if (!mvRes.ok) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
+    if (!mvRes.ok) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl, clinvar_id: null })
 
     const mvJson = await mvRes.json()
     const hit = mvJson?.hits?.[0]
+    // Extract ClinVar ID (may be integer or string in MyVariant response)
+    const clinvarId = hit?.clinvar?.variant_id != null
+      ? String(hit.clinvar.variant_id)
+      : null
+
     if (!hit?.vcf?.position || !hit?.vcf?.ref || !hit?.vcf?.alt) {
-      return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
+      return res.status(200).json({ af: null, gnomad_url: geneLevelUrl, clinvar_id: clinvarId })
     }
 
     const chrMatch = (hit._id || '').match(/^chr(\w+):/)
-    if (!chrMatch) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
+    if (!chrMatch) return res.status(200).json({ af: null, gnomad_url: geneLevelUrl, clinvar_id: clinvarId })
 
     const chr = chrMatch[1]
     const { position: pos, ref, alt } = hit.vcf
@@ -52,14 +57,14 @@ export default async function handler(req, res) {
       }),
     })
 
-    if (!gnomadRes.ok) return res.status(200).json({ af: null, gnomad_url: variantUrl })
+    if (!gnomadRes.ok) return res.status(200).json({ af: null, gnomad_url: variantUrl, clinvar_id: clinvarId })
 
     const gnomadJson = await gnomadRes.json()
     const variant = gnomadJson?.data?.variant
     const af = variant?.genome?.af ?? variant?.exome?.af ?? null
 
-    return res.status(200).json({ af, gnomad_url: variantUrl })
+    return res.status(200).json({ af, gnomad_url: variantUrl, clinvar_id: clinvarId })
   } catch {
-    return res.status(200).json({ af: null, gnomad_url: geneLevelUrl })
+    return res.status(200).json({ af: null, gnomad_url: geneLevelUrl, clinvar_id: null })
   }
 }

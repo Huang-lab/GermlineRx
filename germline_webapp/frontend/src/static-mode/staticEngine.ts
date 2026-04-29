@@ -35,7 +35,7 @@ const QUICK_ALIASES: Record<string, { gene: string; hgvs: string; display: strin
   "e6v":               { gene: "HBB",   hgvs: "c.20A>T",        display: "HbS E6V",         fc: "sickle_cell" },
   "v30m":              { gene: "TTR",   hgvs: "c.148G>A",        display: "V30M",            fc: null },
   "v122i":             { gene: "TTR",   hgvs: "c.424G>A",        display: "V122I",           fc: null },
-  "a4v":               { gene: "SOD1",  hgvs: "c.11C>T",         display: "A4V",             fc: "sod1_als" },
+  "a4v":               { gene: "SOD1",  hgvs: "c.14C>T",         display: "A4V",             fc: "sod1_als" },
   "n370s":             { gene: "GBA",   hgvs: "c.1226A>G",       display: "N370S",           fc: null },
   "l444p":             { gene: "GBA",   hgvs: "c.1448T>C",       display: "L444P",           fc: null },
   "exon51":            { gene: "DMD",   hgvs: "del_exon51",      display: "Exon 51 del",     fc: "exon51_skippable" },
@@ -88,7 +88,7 @@ const DISEASE_TO_GENE: Record<string, string> = {
 const GNOMAD_CURATED: Record<string, number> = {
   "CFTR:c.1521_1523del": 0.0142,
   "CFTR:c.1652G>A":      0.00015,
-  "SOD1:c.11C>T":        0.000004,
+  "SOD1:c.14C>T":        0.000004,
   "SOD1:c.272A>C":       0.000008,
   "HBB:c.20A>T":         0.0024,
   "TTR:c.148G>A":        0.00003,
@@ -224,7 +224,7 @@ function buildResult(
 const CLINVAR_KNOWN_PATHOGENIC: Record<string, string[]> = {
   "CFTR":  ["c.1521_1523del", "c.1652G>A", "c.3846G>A", "c.1624G>T"],
   "DMD":   ["del"],
-  "SOD1":  ["c.11C>T", "c.272A>C"],
+  "SOD1":  ["c.14C>T", "c.272A>C"],
   "SMN1":  ["c.840C>T"],
   "HBB":   ["c.20A>T", "c.19G>A"],
   "TTR":   ["c.148G>A", "c.424G>A"],
@@ -260,7 +260,7 @@ function reviewStatusToStars(status: string): number {
   return 0
 }
 
-async function fetchGnomadVariantLevel(gene: string, hgvs: string): Promise<{ af: number | null; gnomad_url: string }> {
+async function fetchGnomadVariantLevel(gene: string, hgvs: string): Promise<{ af: number | null; gnomad_url: string; clinvar_id: string | null }> {
   const geneUpper = gene.toUpperCase()
   const curatedKey = `${geneUpper}:${hgvs}`
   const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r4`
@@ -268,7 +268,7 @@ async function fetchGnomadVariantLevel(gene: string, hgvs: string): Promise<{ af
 
   // Skip API for gene-only or non-HGVS inputs
   if (!hgvs || hgvs === 'unknown' || hgvs.startsWith('del_')) {
-    return { af: curatedAf, gnomad_url: geneLevelUrl }
+    return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
   }
 
   try {
@@ -279,21 +279,22 @@ async function fetchGnomadVariantLevel(gene: string, hgvs: string): Promise<{ af
       body: JSON.stringify({ gene: geneUpper, hgvs }),
       signal: AbortSignal.timeout(12000),
     })
-    if (!res.ok) return { af: curatedAf, gnomad_url: geneLevelUrl }
+    if (!res.ok) return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
 
     const data = await res.json()
     return {
       af: data.af ?? curatedAf,
       gnomad_url: data.gnomad_url || geneLevelUrl,
+      clinvar_id: data.clinvar_id || null,
     }
   } catch {
     // Fallback: local dev without vercel dev, or network error
-    return { af: curatedAf, gnomad_url: geneLevelUrl }
+    return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
   }
 }
 
 async function fetchTier0(gene: string, hgvs: string): Promise<Tier0Result> {
-  const { af, gnomad_url } = await fetchGnomadVariantLevel(gene, hgvs)
+  const { af, gnomad_url, clinvar_id: mvClinvarId } = await fetchGnomadVariantLevel(gene, hgvs)
   const afInterpretation = interpretAf(af)
 
   if (hgvs === 'unknown' || !hgvs) {
@@ -302,24 +303,24 @@ async function fetchTier0(gene: string, hgvs: string): Promise<Tier0Result> {
   }
 
   try {
-    const searchQuery = encodeURIComponent(`${gene}[gene] AND "${hgvs}"[All Fields]`)
-    const searchRes = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term=${searchQuery}&retmode=json&retmax=1`)
-    const searchJson = await searchRes.json()
-    let ids: string[] = searchJson?.esearchresult?.idlist || []
+    // Use ClinVar ID from MyVariant.info (accurate, field-specific match)
+    // Fall back to esearch only if MyVariant didn't return one
+    let clinvarId: string | null = mvClinvarId
 
-    if (ids.length === 0) {
-      const broadQuery = encodeURIComponent(`${gene}[gene] AND pathogenic[clinsig]`)
-      const broadRes = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term=${broadQuery}&retmode=json&retmax=1`)
-      const broadJson = await broadRes.json()
-      ids = broadJson?.esearchresult?.idlist || []
+    if (!clinvarId) {
+      // Fallback esearch — use protein notation if available for better specificity
+      const searchQuery = encodeURIComponent(`${gene}[gene] AND "${hgvs}"[Variant Name]`)
+      const searchRes = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term=${searchQuery}&retmode=json&retmax=1`)
+      const searchJson = await searchRes.json()
+      const ids: string[] = searchJson?.esearchresult?.idlist || []
+      clinvarId = ids[0] || null
     }
 
-    if (ids.length === 0) {
+    if (!clinvarId) {
       const fb = curatedClinVarFallback(gene, hgvs)
       return { ...fb, confidence: fb.review_stars >= 1 ? 'MODERATE' : 'LOW', gnomad_af: af, gnomad_interpretation: afInterpretation, gnomad_url, clingen_note: null }
     }
 
-    const clinvarId = ids[0]
     const summaryRes = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=clinvar&id=${clinvarId}&retmode=json`)
     const summaryJson = await summaryRes.json()
     const result = summaryJson?.result?.[clinvarId]

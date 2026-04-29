@@ -212,7 +212,7 @@ export default function App() {
                 {[
                   { label: '🫁 CFTR F508del', sublabel: 'Cystic Fibrosis · age 24', gene: 'CFTR', hgvs: 'c.1521_1523del', disease: 'Cystic Fibrosis (CFTR)', age: 24, fc: 'f508del' },
                   { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: 'exon51_skippable' },
-                  { label: '🧠 SOD1 A4V', sublabel: 'ALS · age 52', gene: 'SOD1', hgvs: 'c.11C>T', disease: 'ALS — SOD1', age: 52, fc: 'sod1_als' },
+                  { label: '🧠 SOD1 A4V', sublabel: 'ALS · age 52', gene: 'SOD1', hgvs: 'c.14C>T', disease: 'ALS — SOD1', age: 52, fc: 'sod1_als' },
                   { label: '❤️ TTR V30M', sublabel: 'Amyloidosis · age 45', gene: 'TTR', hgvs: 'c.148G>A', disease: 'TTR Amyloidosis', age: 45, fc: 'ttr_variant' },
                   { label: '🎗️ BRCA2 6174delT', sublabel: 'Hereditary Cancer · age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: 'brca2_lof' },
                   { label: '🩸 HBB HbS', sublabel: 'Sickle Cell · age 28', gene: 'HBB', hgvs: 'c.20A>T', disease: 'Sickle Cell Disease', age: 28, fc: 'sickle_cell' },
