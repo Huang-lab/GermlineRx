@@ -47,6 +47,7 @@ class Tier0Result(BaseModel):
     review_status: str
     gnomad_af: Optional[float]
     gnomad_interpretation: str
+    gnomad_url: Optional[str] = None
     clinvar_id: Optional[str]
     clingen_note: Optional[str]
 

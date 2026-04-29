@@ -308,12 +308,21 @@ async function fetchTier0(gene: string, hgvs: string): Promise<Tier0Result> {
     let clinvarId: string | null = mvClinvarId
 
     if (!clinvarId) {
-      // Fallback esearch — use protein notation if available for better specificity
-      const searchQuery = encodeURIComponent(`${gene}[gene] AND "${hgvs}"[Variant Name]`)
-      const searchRes = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term=${searchQuery}&retmode=json&retmax=1`)
-      const searchJson = await searchRes.json()
-      const ids: string[] = searchJson?.esearchresult?.idlist || []
-      clinvarId = ids[0] || null
+      // Fallback 1: [Variant Name] field — exact name match
+      const q1 = encodeURIComponent(`${gene}[gene] AND "${hgvs}"[Variant Name]`)
+      const r1 = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term=${q1}&retmode=json&retmax=1`)
+      const j1 = await r1.json()
+      clinvarId = j1?.esearchresult?.idlist?.[0] || null
+    }
+
+    if (!clinvarId) {
+      // Fallback 2: [All Fields] — broader match, safe here because MyVariant already
+      // handled common variants; this only runs for structural/rare variants where
+      // the HGVS string is unique enough not to cause spurious matches
+      const q2 = encodeURIComponent(`${gene}[gene] AND "${hgvs}"[All Fields]`)
+      const r2 = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term=${q2}&retmode=json&retmax=1`)
+      const j2 = await r2.json()
+      clinvarId = j2?.esearchresult?.idlist?.[0] || null
     }
 
     if (!clinvarId) {

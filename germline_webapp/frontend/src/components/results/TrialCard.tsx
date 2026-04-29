@@ -41,6 +41,9 @@ export default function TrialCard({ trial }: Props) {
                 {trial.phase}
               </span>
             )}
+            <span className="text-xs bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full font-medium">
+              Relevance {Math.round(trial.relevance_score * 100)}%
+            </span>
             <span className="text-xs text-gray-400 font-mono">{trial.nct_id}</span>
           </div>
           <h4 className="text-sm font-semibold text-gray-800 leading-snug">{trial.title}</h4>
