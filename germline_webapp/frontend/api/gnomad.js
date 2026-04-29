@@ -30,7 +30,7 @@ export default async function handler(req, res) {
       ? String(hit.clinvar.variant_id)
       : null
 
-    if (!hit?.vcf?.position || !hit?.vcf?.ref || !hit?.vcf?.alt) {
+    if (hit?.vcf?.position == null || !hit?.vcf?.ref || !hit?.vcf?.alt) {
       return res.status(200).json({ af: null, gnomad_url: geneLevelUrl, clinvar_id: clinvarId })
     }
 
@@ -46,6 +46,7 @@ export default async function handler(req, res) {
     const gnomadRes = await fetch(GNOMAD_GRAPHQL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(8000),
       body: JSON.stringify({
         query: `query($v: String!) {
           variant(variantId: $v, dataset: gnomad_r4) {
