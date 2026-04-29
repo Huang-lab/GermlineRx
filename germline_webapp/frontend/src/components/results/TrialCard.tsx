@@ -36,13 +36,13 @@ export default function TrialCard({ trial }: Props) {
             <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${style.bg} ${style.text}`}>
               {style.label}
             </span>
-            {trial.phase && (
+            {trial.phase && trial.phase !== 'NA' && (
               <span className="text-xs bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
                 {trial.phase}
               </span>
             )}
             <span className="text-xs bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full font-medium">
-              Relevance {Math.round(trial.relevance_score * 100)}%
+              Relevance {trial.relevance_score}%
             </span>
             <span className="text-xs text-gray-400 font-mono">{trial.nct_id}</span>
           </div>

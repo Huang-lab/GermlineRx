@@ -88,7 +88,14 @@ export default function ResultsPanel({ data, onReset }: Props) {
       <TierSection title="Variant Interpretation" icon="🔬" count={null}>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <InfoRow label="Classification" value={data.tier0.classification} />
-          <InfoRow label="Review Status" value={data.tier0.review_status} />
+          <InfoRow label="Evidence" value={
+            <span title={data.tier0.review_status}>
+              {Array.from({ length: 4 }, (_, i) => (
+                <span key={i} className={i < data.tier0.review_stars ? 'text-yellow-400' : 'text-gray-200'}>★</span>
+              ))}
+              <span className="text-xs text-gray-400 ml-1">({data.tier0.review_status})</span>
+            </span>
+          } />
           {data.tier0.gnomad_af !== null && (
             <InfoRow label="gnomAD AF" value={
               data.tier0.gnomad_url
@@ -107,7 +114,6 @@ export default function ResultsPanel({ data, onReset }: Props) {
               </a>
             } />
           )}
-          <InfoRow label="Population" value={data.tier0.gnomad_interpretation} />
           {data.tier0.clinvar_id && (
             <InfoRow label="ClinVar ID" value={
               <a href={`https://www.ncbi.nlm.nih.gov/clinvar/variation/${data.tier0.clinvar_id}`}
