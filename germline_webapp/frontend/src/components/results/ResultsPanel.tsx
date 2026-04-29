@@ -138,7 +138,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
                   <div className="flex gap-1.5 flex-wrap">
                     {drug.fda_approved && (
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                        FDA Approved {drug.approval_year}
+                        FDA Approved{drug.approval_year ? ` ${drug.approval_year}` : ''}
                       </span>
                     )}
                     {drug.line && (

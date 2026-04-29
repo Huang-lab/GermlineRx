@@ -59,8 +59,8 @@ export default function App() {
         ? await staticAnalyze(gene, hgvs, disease, age, fc)
         : await analyzeVariant(gene, hgvs, disease, age, fc)
       setResults(data)
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }

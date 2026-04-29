@@ -29,7 +29,7 @@ const QUICK_ALIASES: Record<string, { gene: string; hgvs: string; display: strin
   "phe508del":         { gene: "CFTR",  hgvs: "c.1521_1523del", display: "F508del",        fc: "f508del" },
   "g551d":             { gene: "CFTR",  hgvs: "c.1652G>A",      display: "G551D",           fc: "gating_mutation" },
   "r117h":             { gene: "CFTR",  hgvs: "c.350G>A",       display: "R117H",           fc: null },
-  "w1282x":            { gene: "cftr",  hgvs: "c.3846G>A",      display: "W1282X",          fc: "nonsense" },
+  "w1282x":            { gene: "CFTR",  hgvs: "c.3846G>A",      display: "W1282X",          fc: "nonsense" },
   "hbs":               { gene: "HBB",   hgvs: "c.20A>T",        display: "HbS (sickle cell)", fc: "sickle_cell" },
   "sickle cell hbs":   { gene: "HBB",   hgvs: "c.20A>T",        display: "HbS (sickle cell)", fc: "sickle_cell" },
   "e6v":               { gene: "HBB",   hgvs: "c.20A>T",        display: "HbS E6V",         fc: "sickle_cell" },
@@ -190,9 +190,9 @@ function lookupAlias(key: string): NormalizeResponse | null {
     return buildResult(key, e.gene.toUpperCase(), e.hgvs, e.display, e.fc, 'HIGH',
       `Recognized common variant name: ${e.display}`)
   }
-  // Substring match
+  // Substring match — only for keys >= 4 chars to avoid "del" / short-word false positives
   for (const [aliasKey, e] of Object.entries(QUICK_ALIASES)) {
-    if (aliasKey.includes(key) || key.includes(aliasKey)) {
+    if (aliasKey.length >= 4 && (aliasKey.includes(key) || key.includes(aliasKey))) {
       return buildResult(key, e.gene.toUpperCase(), e.hgvs, e.display, e.fc, 'HIGH',
         `Recognized common variant name: ${e.display}`)
     }
@@ -237,7 +237,12 @@ const CLINVAR_KNOWN_PATHOGENIC: Record<string, string[]> = {
 function curatedClinVarFallback(gene: string, hgvs: string): Pick<Tier0Result, 'classification' | 'review_stars' | 'review_status' | 'clinvar_id'> {
   const geneUpper = gene.toUpperCase()
   const knownVariants = CLINVAR_KNOWN_PATHOGENIC[geneUpper] || []
-  const isKnown = knownVariants.some(v => hgvs.toLowerCase().includes(v.toLowerCase()))
+  const hgvsLower = hgvs.toLowerCase()
+  const isKnown = knownVariants.some(v => {
+    const vLower = v.toLowerCase()
+    // Use exact match; for "del" gene-level entries allow substring since hgvs may be "del_exon51"
+    return vLower === 'del' ? hgvsLower.includes(vLower) : hgvsLower === vLower
+  })
   if (isKnown || CLINGEN_ACTIONABLE.has(geneUpper)) {
     return { classification: 'Pathogenic', review_stars: 1, review_status: 'criteria provided, single submitter', clinvar_id: null }
   }
@@ -464,9 +469,9 @@ const SEARCH_TERMS: Record<string, string[]> = {
 
 // ─── Tier 2: ClinicalTrials.gov — recruiting trials ──────────────────────────
 
-function parseAgeYears(ageStr: string): number {
+function parseAgeYears(ageStr: string): number | null {
   const match = ageStr.match(/(\d+)\s*(year|month|week)/i)
-  if (!match) return 0
+  if (!match) return null
   const n = parseInt(match[1])
   const unit = match[2].toLowerCase()
   if (unit.startsWith('month')) return n / 12
@@ -494,8 +499,8 @@ function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string): TrialR
   const contacts = p.contactsLocationsModule?.centralContacts || []
   const nctId = id.nctId || 'N/A'
 
-  const minAge = parseAgeYears(elig.minimumAge || '0 years')
-  const maxAge = parseAgeYears(elig.maximumAge || '120 years')
+  const minAge = parseAgeYears(elig.minimumAge || '0 years') ?? 0
+  const maxAge = parseAgeYears(elig.maximumAge || '120 years') ?? 120
   const sex = (elig.sex || 'ALL').toUpperCase()
   const healthyOnly = elig.healthyVolunteers === true
   const criteriaText = (elig.eligibilityCriteria || '').toLowerCase()
