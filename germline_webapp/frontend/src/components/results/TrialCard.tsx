@@ -1,59 +1,39 @@
-import { useState } from 'react'
 import type { TrialResult } from '../../types'
 
-const ELIGIBILITY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  ELIGIBLE:           { bg: 'bg-green-50 border-green-300',  text: 'text-green-700',  label: 'Eligible' },
-  LIKELY_ELIGIBLE:    { bg: 'bg-blue-50 border-blue-300',    text: 'text-blue-700',   label: 'Likely Eligible' },
-  CHECK_WITH_DOCTOR:  { bg: 'bg-yellow-50 border-yellow-300',text: 'text-yellow-700', label: 'Check with Doctor' },
-  INELIGIBLE:         { bg: 'bg-red-50 border-red-300',      text: 'text-red-700',    label: 'Ineligible' },
-}
-
-const STATUS_ICONS: Record<string, string> = {
-  MET:     '✓',
-  NOT_MET: '✗',
-  UNKNOWN: '?',
-  WARNING: '!',
-}
-const STATUS_COLORS: Record<string, string> = {
-  MET:     'text-green-600',
-  NOT_MET: 'text-red-600',
-  UNKNOWN: 'text-gray-400',
-  WARNING: 'text-yellow-600',
+const ELIGIBILITY_STYLES: Record<string, { bg: string; border: string; text: string; label: string }> = {
+  ELIGIBLE:           { bg: 'bg-green-50',  border: 'border-green-300',  text: 'text-green-700',  label: 'Eligible' },
+  LIKELY_ELIGIBLE:    { bg: 'bg-blue-50',   border: 'border-blue-300',   text: 'text-blue-700',   label: 'Likely Eligible' },
+  CHECK_WITH_DOCTOR:  { bg: 'bg-yellow-50', border: 'border-yellow-300', text: 'text-yellow-700', label: 'Check with Doctor' },
+  INELIGIBLE:         { bg: 'bg-red-50',    border: 'border-red-300',    text: 'text-red-700',    label: 'Ineligible' },
 }
 
 interface Props { trial: TrialResult }
 
 export default function TrialCard({ trial }: Props) {
-  const [expanded, setExpanded] = useState(false)
   const style = ELIGIBILITY_STYLES[trial.eligibility_overall] || ELIGIBILITY_STYLES.CHECK_WITH_DOCTOR
+  const hasInclusion = trial.inclusion_bullets.length > 0
+  const hasExclusion = trial.exclusion_bullets.length > 0
 
   return (
-    <div className={`border rounded-xl p-4 ${style.bg} transition`}>
+    <div className={`border ${style.border} rounded-xl p-4 ${style.bg}`}>
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${style.bg} ${style.text}`}>
-              {style.label}
-            </span>
-            {trial.phase && trial.phase !== 'NA' && (
-              <span className="text-xs bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
-                {trial.phase}
-              </span>
-            )}
-            <span className="text-xs bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full font-medium">
-              Relevance {trial.relevance_score}%
-            </span>
-            <span className="text-xs text-gray-400 font-mono">{trial.nct_id}</span>
-          </div>
-          <h4 className="text-sm font-semibold text-gray-800 leading-snug">{trial.title}</h4>
-          <p className="text-xs text-gray-600 mt-1">{trial.eligibility_plain}</p>
-        </div>
+      <div className="flex items-center gap-2 flex-wrap mb-2">
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${style.border} ${style.bg} ${style.text}`}>
+          {style.label}
+        </span>
+        {trial.phase && trial.phase !== 'NA' && (
+          <span className="text-xs bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+            {trial.phase}
+          </span>
+        )}
+        <span className="text-xs text-gray-400 font-mono ml-auto">{trial.nct_id}</span>
       </div>
+
+      <h4 className="text-sm font-semibold text-gray-800 leading-snug mb-1">{trial.title}</h4>
 
       {/* Interventions */}
       {trial.interventions.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 mb-3">
           {trial.interventions.map((iv, i) => (
             <span key={i} className="text-xs bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded">
               {iv}
@@ -62,62 +42,40 @@ export default function TrialCard({ trial }: Props) {
         </div>
       )}
 
-      {/* Expandable criteria */}
-      {trial.criterion_checks.length > 0 && (
-        <div className="mt-3">
-          <button
-            className="text-xs text-brand-600 hover:underline font-medium"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? 'Hide' : 'Show'} eligibility criteria ({trial.criterion_checks.length})
-          </button>
-          {expanded && (() => {
-            const inclChecks = trial.criterion_checks.filter(c => !c.isExclusion)
-            const exclChecks = trial.criterion_checks.filter(c => c.isExclusion)
-            return (
-              <div className="mt-2 space-y-3">
-                {inclChecks.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Inclusion</p>
-                    <ul className="space-y-1">
-                      {inclChecks.map((c, i) => (
-                        <li key={i} className="flex items-start gap-2 text-xs">
-                          <span className={`font-bold mt-0.5 ${STATUS_COLORS[c.status]}`}>
-                            {STATUS_ICONS[c.status]}
-                          </span>
-                          <div>
-                            <span className="font-medium text-gray-700">{c.criterion}:</span>{' '}
-                            <span className="text-gray-500">{c.explanation}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {exclChecks.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Standard exclusions to discuss with doctor</p>
-                    <ul className="space-y-1">
-                      {exclChecks.map((c, i) => (
-                        <li key={i} className="flex items-start gap-2 text-xs">
-                          <span className="font-bold mt-0.5 text-gray-400">?</span>
-                          <div>
-                            <span className="font-medium text-gray-500">{c.criterion}:</span>{' '}
-                            <span className="text-gray-400">{c.explanation}</span>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )
-          })()}
+      {/* Eligibility criteria — always visible bullet points */}
+      {(hasInclusion || hasExclusion) && (
+        <div className="mt-2 space-y-3">
+          {hasInclusion && (
+            <div>
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Inclusion Criteria</p>
+              <ul className="space-y-1">
+                {trial.inclusion_bullets.map((b, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
+                    <span className="mt-0.5 text-green-500 font-bold flex-shrink-0">•</span>
+                    {b}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {hasExclusion && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Exclusion Criteria</p>
+              <ul className="space-y-1">
+                {trial.exclusion_bullets.map((b, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs text-gray-500">
+                    <span className="mt-0.5 text-red-400 font-bold flex-shrink-0">•</span>
+                    {b}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Footer links */}
-      <div className="mt-3 flex items-center gap-3 flex-wrap">
+      {/* Footer */}
+      <div className="mt-3 flex items-center gap-3 flex-wrap border-t border-gray-200 pt-2">
         <a
           href={trial.url} target="_blank" rel="noopener noreferrer"
           className="text-xs text-brand-600 hover:underline font-medium"
