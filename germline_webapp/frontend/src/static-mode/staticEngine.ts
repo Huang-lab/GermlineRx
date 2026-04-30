@@ -469,6 +469,24 @@ const SEARCH_TERMS: Record<string, string[]> = {
 
 // ─── Tier 2: ClinicalTrials.gov — recruiting trials ──────────────────────────
 
+function splitCriteriaText(text: string): [string, string] {
+  const exclIdx = text.search(/exclusion\s+criteria/i)
+  if (exclIdx === -1) return [text, '']
+  return [text.slice(0, exclIdx), text.slice(exclIdx)]
+}
+
+const EXCLUSION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: 'Pregnancy/breastfeeding',     pattern: /pregnan|breastfeed|nursing/i },
+  { label: 'Liver disease',               pattern: /liver disease|liver failure|cirrhosis|hepatic impairment/i },
+  { label: 'Renal impairment',            pattern: /renal impairment|renal failure|kidney failure/i },
+  { label: 'Active cancer/malignancy',    pattern: /active cancer|active malignancy|concurrent malignancy/i },
+  { label: 'Immunosuppression',           pattern: /immunosuppressed|immunocompromised/i },
+  { label: 'HIV',                         pattern: /\bHIV\b|human immunodeficiency virus/i },
+  { label: 'Prior gene therapy',          pattern: /prior gene therapy|previous gene therapy/i },
+  { label: 'Pre-existing AAV antibodies', pattern: /aav antibod|neutralizing antibod.*aav/i },
+  { label: 'Prior organ transplant',      pattern: /organ transplant|transplant recipient/i },
+]
+
 function parseAgeYears(ageStr: string): number | null {
   const match = ageStr.match(/(\d+)\s*(year|month|week)/i)
   if (!match) return null
@@ -503,7 +521,9 @@ function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string): TrialR
   const maxAge = parseAgeYears(elig.maximumAge || '120 years') ?? 120
   const sex = (elig.sex || 'ALL').toUpperCase()
   const healthyOnly = elig.healthyVolunteers === true
-  const criteriaText = (elig.eligibilityCriteria || '').toLowerCase()
+  const rawCriteria = elig.eligibilityCriteria || ''
+  const [inclText, exclText] = splitCriteriaText(rawCriteria)
+  const inclLower = inclText.toLowerCase()
   const geneUpper = (gene || '').toUpperCase()
 
   const checks: import('../types').CriterionCheck[] = []
@@ -540,13 +560,27 @@ function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string): TrialR
     })
   }
 
-  // Gene mention in criteria (free-text — informational)
-  if (geneUpper && criteriaText.includes(geneUpper.toLowerCase())) {
+  // Gene mention in inclusion section only (not exclusion)
+  if (geneUpper && inclLower.includes(geneUpper.toLowerCase())) {
     checks.push({
-      criterion: `${geneUpper} gene mentioned in eligibility`,
+      criterion: `${geneUpper} gene mentioned in inclusion criteria`,
       status: 'MET',
-      explanation: `Trial criteria specifically reference ${geneUpper}`,
+      explanation: `Inclusion criteria specifically reference ${geneUpper}`,
     })
+  }
+
+  // Exclusion conditions parsed from free-text exclusion section
+  if (exclText) {
+    for (const { label, pattern } of EXCLUSION_PATTERNS) {
+      if (pattern.test(exclText)) {
+        checks.push({
+          criterion: label,
+          status: 'UNKNOWN',
+          explanation: 'Exclusion criterion in this trial — discuss with your care team',
+          isExclusion: true,
+        })
+      }
+    }
   }
 
   let eligOverall: TrialResult['eligibility_overall'] = 'CHECK_WITH_DOCTOR'

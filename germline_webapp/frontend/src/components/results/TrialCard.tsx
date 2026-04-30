@@ -71,21 +71,48 @@ export default function TrialCard({ trial }: Props) {
           >
             {expanded ? 'Hide' : 'Show'} eligibility criteria ({trial.criterion_checks.length})
           </button>
-          {expanded && (
-            <ul className="mt-2 space-y-1">
-              {trial.criterion_checks.map((c, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs">
-                  <span className={`font-bold mt-0.5 ${STATUS_COLORS[c.status]}`}>
-                    {STATUS_ICONS[c.status]}
-                  </span>
+          {expanded && (() => {
+            const inclChecks = trial.criterion_checks.filter(c => !c.isExclusion)
+            const exclChecks = trial.criterion_checks.filter(c => c.isExclusion)
+            return (
+              <div className="mt-2 space-y-3">
+                {inclChecks.length > 0 && (
                   <div>
-                    <span className="font-medium text-gray-700">{c.criterion}:</span>{' '}
-                    <span className="text-gray-500">{c.explanation}</span>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Inclusion</p>
+                    <ul className="space-y-1">
+                      {inclChecks.map((c, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs">
+                          <span className={`font-bold mt-0.5 ${STATUS_COLORS[c.status]}`}>
+                            {STATUS_ICONS[c.status]}
+                          </span>
+                          <div>
+                            <span className="font-medium text-gray-700">{c.criterion}:</span>{' '}
+                            <span className="text-gray-500">{c.explanation}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                )}
+                {exclChecks.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Standard exclusions to discuss with doctor</p>
+                    <ul className="space-y-1">
+                      {exclChecks.map((c, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs">
+                          <span className="font-bold mt-0.5 text-gray-400">?</span>
+                          <div>
+                            <span className="font-medium text-gray-500">{c.criterion}:</span>{' '}
+                            <span className="text-gray-400">{c.explanation}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       )}
 
