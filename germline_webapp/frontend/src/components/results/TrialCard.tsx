@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { TrialResult } from '../../types'
 
 const ELIGIBILITY_STYLES: Record<string, { bg: string; border: string; text: string; label: string }> = {
@@ -22,11 +23,19 @@ const STATUS_COLORS: Record<string, string> = {
 
 interface Props { trial: TrialResult }
 
+const MAX_BULLETS = 4
+
 export default function TrialCard({ trial }: Props) {
   const style = ELIGIBILITY_STYLES[trial.eligibility_overall] || ELIGIBILITY_STYLES.CHECK_WITH_DOCTOR
   const hasInclusion = trial.inclusion_bullets.length > 0
   const hasExclusion = trial.exclusion_bullets.length > 0
   const structuredChecks = trial.criterion_checks.filter(c => !c.isExclusion)
+  const [inclExpanded, setInclExpanded] = useState(false)
+  const [exclExpanded, setExclExpanded] = useState(false)
+  const visibleIncl = inclExpanded ? trial.inclusion_bullets : trial.inclusion_bullets.slice(0, MAX_BULLETS)
+  const visibleExcl = exclExpanded ? trial.exclusion_bullets : trial.exclusion_bullets.slice(0, MAX_BULLETS)
+  const moreIncl = trial.inclusion_bullets.length - MAX_BULLETS
+  const moreExcl = trial.exclusion_bullets.length - MAX_BULLETS
 
   return (
     <div className={`border ${style.border} rounded-xl p-4 ${style.bg}`}>
@@ -83,26 +92,44 @@ export default function TrialCard({ trial }: Props) {
             <div>
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Inclusion Criteria</p>
               <ul className="space-y-1">
-                {trial.inclusion_bullets.map((b, i) => (
+                {visibleIncl.map((b, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
                     <span className="mt-0.5 text-green-500 font-bold flex-shrink-0">•</span>
                     {b}
                   </li>
                 ))}
               </ul>
+              {moreIncl > 0 && (
+                <button
+                  type="button"
+                  className="mt-1 text-xs text-brand-600 hover:underline"
+                  onClick={() => setInclExpanded(v => !v)}
+                >
+                  {inclExpanded ? 'Show less ▴' : `+ ${moreIncl} more ▾`}
+                </button>
+              )}
             </div>
           )}
           {hasExclusion && (
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Exclusion Criteria</p>
               <ul className="space-y-1">
-                {trial.exclusion_bullets.map((b, i) => (
+                {visibleExcl.map((b, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-xs text-gray-500">
                     <span className="mt-0.5 text-red-400 font-bold flex-shrink-0">•</span>
                     {b}
                   </li>
                 ))}
               </ul>
+              {moreExcl > 0 && (
+                <button
+                  type="button"
+                  className="mt-1 text-xs text-brand-600 hover:underline"
+                  onClick={() => setExclExpanded(v => !v)}
+                >
+                  {exclExpanded ? 'Show less ▴' : `+ ${moreExcl} more ▾`}
+                </button>
+              )}
             </div>
           )}
         </div>

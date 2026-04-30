@@ -475,11 +475,26 @@ function splitCriteriaText(text: string): [string, string] {
   return [text.slice(0, exclIdx), text.slice(exclIdx)]
 }
 
+function cleanBullet(raw: string): string {
+  let s = raw
+    .replace(/^[\d]+\.\s*/, '')   // strip "1. "
+    .replace(/^[a-z]\)\s*/i, '')  // strip "a) "
+    .trim()
+  if (s.length > 90) {
+    const cut = s.search(/[.;—]/)
+    if (cut > 30) s = s.slice(0, cut + 1)
+    else s = s.slice(0, 90) + '…'
+  }
+  return s
+}
+
 function parseBullets(section: string): string[] {
   return section
     .split('\n')
     .map(line => line.replace(/^[\s*\-•\d.]+/, '').trim())
     .filter(line => line.length > 10 && !/^(inclusion|exclusion)\s+criteria/i.test(line))
+    .map(cleanBullet)
+    .filter(line => line.length > 5)
 }
 
 const EXCLUSION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
@@ -517,7 +532,7 @@ type RawStudy = {
   }
 }
 
-function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string): TrialResult {
+function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string, patientSex?: string | null): TrialResult {
   const p = s.protocolSection || {}
   const id = p.identificationModule || {}
   const elig = p.eligibilityModule || {}
@@ -549,13 +564,26 @@ function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string): TrialR
     if (!ageMet) ineligible = true
   }
 
-  // Sex check (structured field)
+  // Sex check (structured field — reliable when patient sex is known)
   if (sex === 'MALE' || sex === 'FEMALE') {
-    checks.push({
-      criterion: `${sex === 'MALE' ? 'Male' : 'Female'} participants only`,
-      status: 'UNKNOWN',
-      explanation: `This trial enrolls ${sex.toLowerCase()} participants only — verify with your care team`,
-    })
+    const sexLabel = sex === 'MALE' ? 'Male' : 'Female'
+    if (patientSex) {
+      const sexMet = patientSex === sex
+      checks.push({
+        criterion: `${sexLabel} participants only`,
+        status: sexMet ? 'MET' : 'NOT_MET',
+        explanation: sexMet
+          ? `Trial enrolls ${sex.toLowerCase()} participants — matches your selection`
+          : `Trial enrolls ${sex.toLowerCase()} participants only — does not match your selection`,
+      })
+      if (!sexMet) ineligible = true
+    } else {
+      checks.push({
+        criterion: `${sexLabel} participants only`,
+        status: 'UNKNOWN',
+        explanation: `Trial enrolls ${sex.toLowerCase()} participants only — specify your biological sex above for a definitive check`,
+      })
+    }
   }
 
   // Healthy volunteers check
@@ -636,7 +664,7 @@ function filterRelevantStudies(studies: RawStudy[], gene: string): RawStudy[] {
   })
 }
 
-async function fetchTier2(gene: string, disease: string, age: number | null): Promise<Tier2Result> {
+async function fetchTier2(gene: string, disease: string, age: number | null, sex?: string | null): Promise<Tier2Result> {
   try {
     const geneUpper = gene.toUpperCase()
     const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
@@ -646,10 +674,17 @@ async function fetchTier2(gene: string, disease: string, age: number | null): Pr
     const json = await res.json()
     const studies: RawStudy[] = json?.studies || []
     const relevant = filterRelevantStudies(studies, gene)
-    const trials = relevant.map(s => mapStudyToTrial(s, age, gene))
-    return { trials, total_fetched: studies.length, total_after_scoring: relevant.length }
+    const allTrials = relevant.map(s => mapStudyToTrial(s, age, gene, sex))
+    const eligibleTrials = allTrials.filter(t => t.eligibility_overall !== 'INELIGIBLE')
+    const ineligibleCount = allTrials.length - eligibleTrials.length
+    return {
+      trials: eligibleTrials,
+      total_fetched: studies.length,
+      total_after_scoring: relevant.length,
+      total_ineligible: ineligibleCount,
+    }
   } catch {
-    return { trials: [], total_fetched: 0, total_after_scoring: 0 }
+    return { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0 }
   }
 }
 
@@ -840,6 +875,7 @@ export async function staticAnalyze(
   disease: string,
   age: number | null,
   functionalClass: string | null,
+  sex?: string | null,
 ): Promise<AnalyzeResponse> {
   if (gene === 'UNKNOWN') {
     return {
@@ -851,7 +887,7 @@ export async function staticAnalyze(
       overall_status: 'NOT_ACTIONABLE',
       tier0: { classification: 'Unknown significance', confidence: 'LOW', review_stars: 0, review_status: 'No data', gnomad_af: null, gnomad_interpretation: 'Allele frequency not available', gnomad_url: null, clinvar_id: null, clingen_note: null },
       tier1: { drugs: [], surveillance: [] },
-      tier2: { trials: [], total_fetched: 0, total_after_scoring: 0 },
+      tier2: { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0 },
       tier3: { pipeline: [] },
       enrichment: undefined,
       patient_summary: 'The gene or variant could not be recognized. Please check the spelling or try a different format (e.g. HGVS notation, gene symbol, or common name like F508del).',
@@ -863,7 +899,7 @@ export async function staticAnalyze(
   const [tier0, tier1, tier2] = await Promise.all([
     fetchTier0(gene, hgvs),
     fetchTier1(gene),
-    fetchTier2(gene, disease, age),
+    fetchTier2(gene, disease, age, sex),
   ])
 
   const tier2NctIds = new Set(tier2.trials.map(t => t.nct_id))
