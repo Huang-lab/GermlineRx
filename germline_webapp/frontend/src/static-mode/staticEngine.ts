@@ -475,6 +475,13 @@ function splitCriteriaText(text: string): [string, string] {
   return [text.slice(0, exclIdx), text.slice(exclIdx)]
 }
 
+function parseBullets(section: string): string[] {
+  return section
+    .split('\n')
+    .map(line => line.replace(/^[\s*\-•\d.]+/, '').trim())
+    .filter(line => line.length > 10 && !/^(inclusion|exclusion)\s+criteria/i.test(line))
+}
+
 const EXCLUSION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   { label: 'Pregnancy/breastfeeding',     pattern: /pregnan|breastfeed|nursing/i },
   { label: 'Liver disease',               pattern: /liver disease|liver failure|cirrhosis|hepatic impairment/i },
@@ -602,10 +609,11 @@ function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string): TrialR
     phase: (p.designModule?.phases || []).join(', ') || null,
     conditions: p.conditionsModule?.conditions || [],
     interventions: (p.armsInterventionsModule?.interventions || []).map((i: { name?: string }) => i.name || '').filter(Boolean),
-    relevance_score: 50,
     eligibility_overall: eligOverall,
     eligibility_plain: plainParts.join(' '),
     criterion_checks: checks,
+    inclusion_bullets: parseBullets(inclText),
+    exclusion_bullets: parseBullets(exclText),
     contact_name: contacts[0]?.name || null,
     contact_email: contacts[0]?.email || null,
     contact_phone: contacts[0]?.phone || null,

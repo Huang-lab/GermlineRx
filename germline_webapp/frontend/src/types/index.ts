@@ -56,10 +56,11 @@ export interface TrialResult {
   phase: string | null
   conditions: string[]
   interventions: string[]
-  relevance_score: number
   eligibility_overall: 'ELIGIBLE' | 'LIKELY_ELIGIBLE' | 'CHECK_WITH_DOCTOR' | 'INELIGIBLE' | 'UNKNOWN'
   eligibility_plain: string
   criterion_checks: CriterionCheck[]
+  inclusion_bullets: string[]
+  exclusion_bullets: string[]
   contact_name: string | null
   contact_email: string | null
   contact_phone: string | null
