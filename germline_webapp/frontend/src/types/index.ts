@@ -47,6 +47,7 @@ export interface CriterionCheck {
   criterion: string
   status: 'MET' | 'NOT_MET' | 'UNKNOWN' | 'WARNING'
   explanation: string
+  isExclusion?: boolean
 }
 
 export interface TrialResult {
