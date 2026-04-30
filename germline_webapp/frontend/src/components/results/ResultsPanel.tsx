@@ -196,6 +196,11 @@ export default function ResultsPanel({ data, onReset }: Props) {
             ))}
           </div>
         )}
+        {(data.tier2.total_ineligible ?? 0) > 0 && (
+          <p className="text-xs text-gray-400 mt-2">
+            {data.tier2.total_ineligible} trial{data.tier2.total_ineligible === 1 ? '' : 's'} excluded — age or sex outside eligibility range.
+          </p>
+        )}
       </TierSection>
 
       {/* Tier 3 — Emerging Pipeline */}
