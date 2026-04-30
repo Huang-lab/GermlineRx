@@ -215,11 +215,22 @@ export default function ResultsPanel({ data, onReset }: Props) {
                 <p className="text-xs text-gray-600 leading-relaxed">{prog.description}</p>
                 {prog.key_programs.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {prog.key_programs.map((p, j) => (
-                      <span key={j} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                        {p}
-                      </span>
-                    ))}
+                    {prog.key_programs.map((p, j) => {
+                      const nctMatch = p.match(/^NCT:\s*(NCT\d+)/)
+                      return nctMatch ? (
+                        <a key={j}
+                          href={`https://clinicaltrials.gov/study/${nctMatch[1]}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-xs bg-blue-50 text-brand-600 border border-blue-200 px-2 py-0.5 rounded hover:underline"
+                        >
+                          {p} ↗
+                        </a>
+                      ) : (
+                        <span key={j} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                          {p}
+                        </span>
+                      )
+                    })}
                   </div>
                 )}
                 {prog.caveat && (

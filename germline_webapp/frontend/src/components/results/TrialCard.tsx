@@ -7,12 +7,26 @@ const ELIGIBILITY_STYLES: Record<string, { bg: string; border: string; text: str
   INELIGIBLE:         { bg: 'bg-red-50',    border: 'border-red-300',    text: 'text-red-700',    label: 'Ineligible' },
 }
 
+const STATUS_ICONS: Record<string, string> = {
+  MET:     '✓',
+  NOT_MET: '✗',
+  UNKNOWN: '?',
+  WARNING: '!',
+}
+const STATUS_COLORS: Record<string, string> = {
+  MET:     'text-green-600',
+  NOT_MET: 'text-red-600',
+  UNKNOWN: 'text-gray-400',
+  WARNING: 'text-yellow-600',
+}
+
 interface Props { trial: TrialResult }
 
 export default function TrialCard({ trial }: Props) {
   const style = ELIGIBILITY_STYLES[trial.eligibility_overall] || ELIGIBILITY_STYLES.CHECK_WITH_DOCTOR
   const hasInclusion = trial.inclusion_bullets.length > 0
   const hasExclusion = trial.exclusion_bullets.length > 0
+  const structuredChecks = trial.criterion_checks.filter(c => !c.isExclusion)
 
   return (
     <div className={`border ${style.border} rounded-xl p-4 ${style.bg}`}>
@@ -29,7 +43,7 @@ export default function TrialCard({ trial }: Props) {
         <span className="text-xs text-gray-400 font-mono ml-auto">{trial.nct_id}</span>
       </div>
 
-      <h4 className="text-sm font-semibold text-gray-800 leading-snug mb-1">{trial.title}</h4>
+      <h4 className="text-sm font-semibold text-gray-800 leading-snug mb-2">{trial.title}</h4>
 
       {/* Interventions */}
       {trial.interventions.length > 0 && (
@@ -42,9 +56,29 @@ export default function TrialCard({ trial }: Props) {
         </div>
       )}
 
-      {/* Eligibility criteria — always visible bullet points */}
+      {/* Eligibility judgment — structured checks */}
+      {structuredChecks.length > 0 && (
+        <div className="mb-3 bg-white/70 rounded-lg px-3 py-2 border border-gray-200">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Eligibility Check</p>
+          <ul className="space-y-1">
+            {structuredChecks.map((c, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <span className={`font-bold mt-0.5 flex-shrink-0 ${STATUS_COLORS[c.status]}`}>
+                  {STATUS_ICONS[c.status]}
+                </span>
+                <div>
+                  <span className="font-medium text-gray-700">{c.criterion}:</span>{' '}
+                  <span className="text-gray-500">{c.explanation}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Full criteria — bullet points from ClinicalTrials.gov */}
       {(hasInclusion || hasExclusion) && (
-        <div className="mt-2 space-y-3">
+        <div className="space-y-3">
           {hasInclusion && (
             <div>
               <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Inclusion Criteria</p>
