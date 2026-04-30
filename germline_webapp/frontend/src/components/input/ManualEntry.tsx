@@ -13,7 +13,7 @@ const GENE_SUGGESTIONS = [
 ]
 
 interface Props {
-  onAnalyze: (gene: string, hgvs: string, disease: string, age: number | null, fc: string | null) => void
+  onAnalyze: (gene: string, hgvs: string, disease: string, age: number | null, fc: string | null, sex: string | null) => void
   loading: boolean
 }
 
@@ -21,6 +21,7 @@ export default function ManualEntry({ onAnalyze, loading }: Props) {
   const [conditionText, setConditionText] = useState('')
   const [mutationText, setMutationText] = useState('')
   const [age, setAge] = useState('')
+  const [sex, setSex] = useState<string>('')
   const [normalized, setNormalized] = useState<NormalizeResponse | null>(null)
   const [normalizing, setNormalizing] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -52,6 +53,7 @@ export default function ManualEntry({ onAnalyze, loading }: Props) {
       conditionText,
       age !== '' ? parseInt(age) : null,
       normalized.functional_class,
+      sex !== '' ? sex : null,
     )
   }
 
@@ -155,6 +157,22 @@ export default function ManualEntry({ onAnalyze, loading }: Props) {
           value={age}
           onChange={e => setAge(e.target.value)}
         />
+      </div>
+
+      {/* Biological sex */}
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1">
+          4. Biological sex <span className="font-normal text-gray-400">(optional — improves trial matching)</span>
+        </label>
+        <select
+          className="w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+          value={sex}
+          onChange={e => setSex(e.target.value)}
+        >
+          <option value="">Not specified</option>
+          <option value="MALE">Male</option>
+          <option value="FEMALE">Female</option>
+        </select>
       </div>
 
       <button
