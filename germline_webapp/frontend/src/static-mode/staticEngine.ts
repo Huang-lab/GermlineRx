@@ -364,12 +364,28 @@ async function fetchTier0(gene: string, hgvs: string): Promise<Tier0Result> {
   }
 }
 
-// ─── Tier 1: DGIdb GraphQL (gene → drug interactions) ────────────────────────
+// ─── Tier 1: OpenFDA (primary) → DGIdb (fallback) ────────────────────────────
+
+async function fetchTier1OpenFDA(gene: string): Promise<DrugEntry[]> {
+  try {
+    const res = await fetch('/api/openfda-tier1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gene }),
+      signal: AbortSignal.timeout(12000),
+    })
+    if (!res.ok) return []
+    const json = await res.json()
+    return json?.drugs || []
+  } catch {
+    return []
+  }
+}
 
 const DGIDB_URL = 'https://dgidb.org/api/graphql'
 const DGIDB_APPROVAL_SOURCES = new Set(['FDA', 'NCI', 'CIViC', 'ChEMBL', 'TTD', 'TdgClinicalTrial', 'GuideToPharmacology'])
 
-async function fetchTier1(gene: string): Promise<Tier1Result> {
+async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
   try {
     const query = `
       query($names: [String!]!) {
@@ -377,11 +393,7 @@ async function fetchTier1(gene: string): Promise<Tier1Result> {
           nodes {
             name
             interactions {
-              drug {
-                name
-                approved
-                drugAttributes { name value }
-              }
+              drug { name approved drugAttributes { name value } }
               interactionScore
               interactionTypes { type directionality }
               sources { sourceDbName }
@@ -396,29 +408,19 @@ async function fetchTier1(gene: string): Promise<Tier1Result> {
       body: JSON.stringify({ query, variables: { names: [gene.toUpperCase()] } }),
       signal: AbortSignal.timeout(10000),
     })
-    if (!res.ok) return { drugs: [], surveillance: [] }
-
+    if (!res.ok) return []
     const json = await res.json()
-    const nodes = json?.data?.genes?.nodes || []
-    if (nodes.length === 0) return { drugs: [], surveillance: [] }
-
-    const interactions = nodes[0]?.interactions || []
+    const interactions = json?.data?.genes?.nodes?.[0]?.interactions || []
     const seen = new Set<string>()
     const drugs: DrugEntry[] = []
-
     for (const ix of interactions) {
       const drugName: string = ix.drug?.name || ''
       if (!drugName || seen.has(drugName.toLowerCase())) continue
-
       const isApproved: boolean = ix.drug?.approved === true ||
         (ix.sources || []).some((s: { sourceDbName: string }) => DGIDB_APPROVAL_SOURCES.has(s.sourceDbName))
-
-      // For clinical report, only show drugs with some evidence basis
       if (!isApproved && (ix.interactionScore || 0) < 2) continue
-
       seen.add(drugName.toLowerCase())
       const types: string[] = (ix.interactionTypes || []).map((t: { type: string }) => t.type).filter(Boolean)
-
       drugs.push({
         drug_name: drugName,
         action: types.length > 0 ? types.join(', ') : 'gene-drug interaction',
@@ -426,15 +428,21 @@ async function fetchTier1(gene: string): Promise<Tier1Result> {
         approval_year: null,
         evidence_level: isApproved ? 'FDA_approved' : 'Preclinical',
         line: null,
-        caveat: 'Source: DGIdb. Verify indication and current approval status with your physician.',
+        caveat: 'Source: DGIdb. Verify indication and approval status with your physician.',
         source: 'DGIdb',
       })
     }
-
-    return { drugs, surveillance: [] }
+    return drugs
   } catch {
-    return { drugs: [], surveillance: [] }
+    return []
   }
+}
+
+async function fetchTier1(gene: string): Promise<Tier1Result> {
+  const openFdaDrugs = await fetchTier1OpenFDA(gene)
+  if (openFdaDrugs.length > 0) return { drugs: openFdaDrugs, surveillance: [] }
+  const dgidbDrugs = await fetchTier1DGIdb(gene)
+  return { drugs: dgidbDrugs, surveillance: [] }
 }
 
 // ─── Gene-specific search terms (shared by Tier 2 and Tier 3) ────────────────
@@ -545,7 +553,7 @@ function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string, patient
   const healthyOnly = elig.healthyVolunteers === true
   const rawCriteria = elig.eligibilityCriteria || ''
   const [inclText, exclText] = splitCriteriaText(rawCriteria)
-  const inclLower = inclText.toLowerCase()
+
   const geneUpper = (gene || '').toUpperCase()
 
   const checks: import('../types').CriterionCheck[] = []
@@ -595,8 +603,8 @@ function mapStudyToTrial(s: RawStudy, age: number | null, gene?: string, patient
     })
   }
 
-  // Gene mention in inclusion section only (not exclusion)
-  if (geneUpper && inclLower.includes(geneUpper.toLowerCase())) {
+  // Gene mention in inclusion section only (not exclusion) — word-boundary to avoid BRCA1 matching BRCA2
+  if (geneUpper && new RegExp(`\\b${geneUpper}\\b`, 'i').test(inclText)) {
     checks.push({
       criterion: `${geneUpper} gene mentioned in inclusion criteria`,
       status: 'MET',
