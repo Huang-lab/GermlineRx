@@ -44,7 +44,7 @@ export default function TrialCard({ trial }: Props) {
         <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${style.border} ${style.bg} ${style.text}`}>
           {style.label}
         </span>
-        {trial.phase && trial.phase !== 'NA' && (
+        {trial.phase && trial.phase !== 'NA' && trial.phase.trim() && (
           <span className="text-xs bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
             {trial.phase}
           </span>
@@ -143,8 +143,13 @@ export default function TrialCard({ trial }: Props) {
         >
           View on ClinicalTrials.gov →
         </a>
-        {trial.contact_email && (
-          <a href={`mailto:${trial.contact_email}`} className="text-xs text-gray-500 hover:underline">
+        {(trial.contact_email || trial.contact_phone || trial.contact_name) && (
+          <a
+            href={trial.contact_email ? `mailto:${trial.contact_email}` : trial.url}
+            target={trial.contact_email ? undefined : '_blank'}
+            rel="noopener noreferrer"
+            className="text-xs text-gray-500 hover:underline"
+          >
             Contact trial team
           </a>
         )}

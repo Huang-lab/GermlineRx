@@ -674,7 +674,7 @@ async function fetchTier2(gene: string, disease: string, age: number | null, sex
     const json = await res.json()
     const studies: RawStudy[] = json?.studies || []
     const relevant = filterRelevantStudies(studies, gene)
-    const allTrials = relevant.map(s => mapStudyToTrial(s, age, gene, sex))
+    const allTrials = relevant.map(s => mapStudyToTrial(s, age, gene, sex ?? null))
     const eligibleTrials = allTrials.filter(t => t.eligibility_overall !== 'INELIGIBLE')
     const ineligibleCount = allTrials.length - eligibleTrials.length
     return {

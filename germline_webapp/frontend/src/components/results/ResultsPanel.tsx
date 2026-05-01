@@ -203,10 +203,10 @@ export default function ResultsPanel({ data, onReset }: Props) {
         )}
       </TierSection>
 
-      {/* Tier 3 — Emerging Pipeline */}
-      <TierSection title="Emerging Pipeline" icon="🧬" count={data.tier3.pipeline.length}>
+      {/* Tier 3 — Upcoming / Not Yet Open Trials */}
+      <TierSection title="Upcoming Trials & Research" icon="🔬" count={data.tier3.pipeline.length}>
         {data.tier3.pipeline.length === 0 ? (
-          <p className="text-sm text-gray-500">No emerging pipeline programs found for this gene.</p>
+          <p className="text-sm text-gray-500">No upcoming or early-stage trials found for this gene.</p>
         ) : (
           <div className="space-y-3">
             {data.tier3.pipeline.map((prog, i) => (
