@@ -205,6 +205,16 @@ export default function ResultsPanel({ data, onReset }: Props) {
 
       {/* Tier 3 — Upcoming / Not Yet Open Trials */}
       <TierSection title="Upcoming Trials & Research" icon="🔬" count={data.tier3.pipeline.length}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs text-gray-400">Trials registered but not yet open to new patients</p>
+          <a
+            href={`https://clinicaltrials.gov/search?term=${encodeURIComponent(data.gene)}&status=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`}
+            target="_blank" rel="noopener noreferrer"
+            className="text-xs text-brand-600 hover:underline shrink-0 ml-2"
+          >
+            Search ClinicalTrials.gov ↗
+          </a>
+        </div>
         {data.tier3.pipeline.length === 0 ? (
           <p className="text-sm text-gray-500">No upcoming or early-stage trials found for this gene.</p>
         ) : (

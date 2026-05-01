@@ -52,7 +52,12 @@ export default function TrialCard({ trial }: Props) {
         <span className="text-xs text-gray-400 font-mono ml-auto">{trial.nct_id}</span>
       </div>
 
-      <h4 className="text-sm font-semibold text-gray-800 leading-snug mb-2">{trial.title}</h4>
+      <h4 className="text-sm font-semibold text-gray-800 leading-snug mb-1">{trial.title}</h4>
+
+      {/* Plain-language eligibility summary */}
+      {trial.eligibility_plain && (
+        <p className="text-xs text-gray-500 italic mb-2 leading-relaxed">{trial.eligibility_plain}</p>
+      )}
 
       {/* Interventions */}
       {trial.interventions.length > 0 && (
