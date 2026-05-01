@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { normalizeVariant } from '../../utils/api'
 import type { NormalizeResponse } from '../../types'
+import SexSelector from './SexSelector'
 
 // Gene suggestions for autocomplete
 const GENE_SUGGESTIONS = [
@@ -159,21 +160,7 @@ export default function ManualEntry({ onAnalyze, loading }: Props) {
         />
       </div>
 
-      {/* Biological sex */}
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">
-          4. Biological sex <span className="font-normal text-gray-400">(optional — improves trial matching)</span>
-        </label>
-        <select
-          className="w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
-          value={sex}
-          onChange={e => setSex(e.target.value)}
-        >
-          <option value="">Not specified</option>
-          <option value="MALE">Male</option>
-          <option value="FEMALE">Female</option>
-        </select>
-      </div>
+      <SexSelector value={sex} onChange={setSex} />
 
       <button
         type="submit"

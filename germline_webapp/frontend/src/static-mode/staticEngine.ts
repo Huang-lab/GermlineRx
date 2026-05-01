@@ -757,18 +757,9 @@ import type { UploadResponse, ExtractedVariant } from '../types'
 export async function staticUploadFile(file: File): Promise<UploadResponse> {
   const name = file.name.toLowerCase()
 
-  // PDF: cannot parse client-side without heavy library
   if (name.endsWith('.pdf')) {
-    return {
-      file_type: 'pdf',
-      variants_found: 0,
-      variants: [],
-      parse_warnings: [
-        'PDF parsing is not available in the browser-only version. ' +
-        'Please use the full version at huggingface.co/spaces/Rita9CoreX/germline-rx, ' +
-        'or enter your variant manually using the text box.',
-      ],
-    }
+    const { parsePdf } = await import('./staticPdfParser')
+    return parsePdf(file)
   }
 
   // VCF: plain text — parse client-side
