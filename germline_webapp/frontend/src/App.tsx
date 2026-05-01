@@ -51,12 +51,12 @@ export default function App() {
 
   const handleAnalyze = async (
     gene: string, hgvs: string, disease: string,
-    age: number | null, fc: string | null
+    age: number | null, fc: string | null, sex?: string | null
   ) => {
     setLoading(true); setError(null); setResults(null)
     try {
       const data = STATIC_MODE
-        ? await staticAnalyze(gene, hgvs, disease, age, fc)
+        ? await staticAnalyze(gene, hgvs, disease, age, fc, sex)
         : await analyzeVariant(gene, hgvs, disease, age, fc)
       setResults(data)
     } catch (e) {
@@ -67,7 +67,7 @@ export default function App() {
   }
 
   const handleVariantFromUpload = (gene: string, hgvs: string, disease: string) => {
-    handleAnalyze(gene, hgvs, disease, null, null)
+    handleAnalyze(gene, hgvs, disease, null, null, null)
   }
 
   return (
@@ -214,14 +214,14 @@ export default function App() {
                   { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: 'exon51_skippable' },
                   { label: '🧠 SOD1 A4V', sublabel: 'ALS · age 52', gene: 'SOD1', hgvs: 'c.14C>T', disease: 'ALS — SOD1', age: 52, fc: 'sod1_als' },
                   { label: '❤️ TTR V30M', sublabel: 'Amyloidosis · age 45', gene: 'TTR', hgvs: 'c.148G>A', disease: 'TTR Amyloidosis', age: 45, fc: 'ttr_variant' },
-                  { label: '🎗️ BRCA2 6174delT', sublabel: 'Hereditary Cancer · age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: 'brca2_lof' },
+                  { label: '🎗️ BRCA2 c.5946del', sublabel: 'Hereditary Cancer · age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: 'brca2_lof' },
                   { label: '🩸 HBB HbS', sublabel: 'Sickle Cell · age 28', gene: 'HBB', hgvs: 'c.20A>T', disease: 'Sickle Cell Disease', age: 28, fc: 'sickle_cell' },
                   { label: '🧬 APOE4', sublabel: 'Alzheimer\'s risk · age 60', gene: 'APOE', hgvs: 'c.388T>C', disease: 'Alzheimer\'s Disease (APOE)', age: 60, fc: null },
                 ].map(demo => (
                   <button
                     key={demo.label}
                     className="flex flex-col items-center text-xs bg-white border border-gray-200 text-gray-600 px-3 py-2 rounded-xl hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition shadow-sm"
-                    onClick={() => handleAnalyze(demo.gene, demo.hgvs, demo.disease, demo.age, demo.fc)}
+                    onClick={() => handleAnalyze(demo.gene, demo.hgvs, demo.disease, demo.age, demo.fc, null)}
                   >
                     <span className="font-semibold">{demo.label}</span>
                     <span className="text-gray-400 mt-0.5">{demo.sublabel}</span>
