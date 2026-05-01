@@ -86,16 +86,23 @@ export default function ResultsPanel({ data, onReset }: Props) {
 
       {/* Tier 0 */}
       <TierSection title="Variant Interpretation" icon="🔬" count={null}>
+        {data.hgvs === 'unknown' && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+            No specific variant provided — showing gene-level results. Enter a mutation (e.g. c.5946del) for variant-specific ClinVar evidence.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <InfoRow label="Classification" value={data.tier0.classification} />
-          <InfoRow label="Evidence" value={
-            <span title={data.tier0.review_status}>
-              {Array.from({ length: 4 }, (_, i) => (
-                <span key={i} className={i < data.tier0.review_stars ? 'text-yellow-400' : 'text-gray-200'}>★</span>
-              ))}
-              <span className="text-xs text-gray-400 ml-1">({data.tier0.review_status})</span>
-            </span>
-          } />
+          {data.hgvs !== 'unknown' && (
+            <InfoRow label="Evidence" value={
+              <span title={data.tier0.review_status}>
+                {Array.from({ length: 4 }, (_, i) => (
+                  <span key={i} className={i < data.tier0.review_stars ? 'text-yellow-400' : 'text-gray-200'}>★</span>
+                ))}
+                <span className="text-xs text-gray-400 ml-1">({data.tier0.review_status})</span>
+              </span>
+            } />
+          )}
           {data.tier0.gnomad_af !== null && (
             <InfoRow label="gnomAD AF" value={
               data.tier0.gnomad_url
