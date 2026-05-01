@@ -210,18 +210,18 @@ export default function App() {
               <p className="text-xs font-semibold text-gray-500 mb-2 text-center uppercase tracking-wide">Example cases</p>
               <div className="flex flex-wrap justify-center gap-2">
                 {[
-                  { label: '🫁 CFTR F508del', sublabel: 'Cystic Fibrosis · age 24', gene: 'CFTR', hgvs: 'c.1521_1523del', disease: 'Cystic Fibrosis (CFTR)', age: 24, fc: 'f508del' },
-                  { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: 'exon51_skippable' },
-                  { label: '🧠 SOD1 A4V', sublabel: 'ALS · age 52', gene: 'SOD1', hgvs: 'c.14C>T', disease: 'ALS — SOD1', age: 52, fc: 'sod1_als' },
-                  { label: '❤️ TTR V30M', sublabel: 'Amyloidosis · age 45', gene: 'TTR', hgvs: 'c.148G>A', disease: 'TTR Amyloidosis', age: 45, fc: 'ttr_variant' },
-                  { label: '🎗️ BRCA2 c.5946del', sublabel: 'Hereditary Cancer · age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: 'brca2_lof' },
-                  { label: '🩸 HBB HbS', sublabel: 'Sickle Cell · age 28', gene: 'HBB', hgvs: 'c.20A>T', disease: 'Sickle Cell Disease', age: 28, fc: 'sickle_cell' },
-                  { label: '🧬 APOE4', sublabel: 'Alzheimer\'s risk · age 60', gene: 'APOE', hgvs: 'c.388T>C', disease: 'Alzheimer\'s Disease (APOE)', age: 60, fc: null },
+                  { label: '🫁 CFTR F508del', sublabel: 'CF · ♂ age 24', gene: 'CFTR', hgvs: 'c.1521_1523del', disease: 'Cystic Fibrosis (CFTR)', age: 24, fc: 'f508del', sex: 'MALE' as const },
+                  { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · ♂ age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: 'exon51_skippable', sex: 'MALE' as const },
+                  { label: '🧠 SOD1 A4V', sublabel: 'ALS · age 52', gene: 'SOD1', hgvs: 'c.14C>T', disease: 'ALS — SOD1', age: 52, fc: 'sod1_als', sex: null },
+                  { label: '❤️ TTR V30M', sublabel: 'Amyloidosis · age 45', gene: 'TTR', hgvs: 'c.148G>A', disease: 'TTR Amyloidosis', age: 45, fc: 'ttr_variant', sex: null },
+                  { label: '🎗️ BRCA2 c.5946del', sublabel: 'Hereditary Cancer · ♀ age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: 'brca2_lof', sex: 'FEMALE' as const },
+                  { label: '🩸 HBB HbS', sublabel: 'Sickle Cell · age 28', gene: 'HBB', hgvs: 'c.20A>T', disease: 'Sickle Cell Disease', age: 28, fc: 'sickle_cell', sex: null },
+                  { label: '🧬 APOE4', sublabel: "Alzheimer's risk · age 60", gene: 'APOE', hgvs: 'c.388T>C', disease: "Alzheimer's Disease (APOE)", age: 60, fc: null, sex: null },
                 ].map(demo => (
                   <button
                     key={demo.label}
                     className="flex flex-col items-center text-xs bg-white border border-gray-200 text-gray-600 px-3 py-2 rounded-xl hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50 transition shadow-sm"
-                    onClick={() => handleAnalyze(demo.gene, demo.hgvs, demo.disease, demo.age, demo.fc, null)}
+                    onClick={() => handleAnalyze(demo.gene, demo.hgvs, demo.disease, demo.age, demo.fc, demo.sex)}
                   >
                     <span className="font-semibold">{demo.label}</span>
                     <span className="text-gray-400 mt-0.5">{demo.sublabel}</span>

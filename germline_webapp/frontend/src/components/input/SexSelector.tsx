@@ -7,7 +7,7 @@ export default function SexSelector({ value, onChange }: Props) {
   return (
     <div>
       <label className="block text-sm font-semibold text-gray-700 mb-1">
-        4. Biological sex{' '}
+        4. Sex at birth{' '}
         <span className="font-normal text-gray-400">(optional — improves trial matching)</span>
       </label>
       <div className="flex gap-2">
