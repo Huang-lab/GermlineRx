@@ -165,14 +165,16 @@ export default function App() {
                   </button>
                 )}
                 {STATIC_MODE && (
-                  <a
-                    href="https://huggingface.co/spaces/Rita9CoreX/germline-rx"
-                    target="_blank" rel="noopener noreferrer"
-                    className="flex-1 py-3 text-sm font-medium text-gray-400 bg-gray-50 text-center hover:text-brand-600 transition"
-                    title="PDF parsing available in the full version"
+                  <button
+                    className={`flex-1 py-3 text-sm font-medium transition ${
+                      tab === 'upload'
+                        ? 'text-brand-600 border-b-2 border-brand-600 bg-white'
+                        : 'text-gray-500 hover:text-gray-700 bg-gray-50'
+                    }`}
+                    onClick={() => setTab('upload')}
                   >
-                    📄 Upload Report ↗
-                  </a>
+                    📄 Upload Report
+                  </button>
                 )}
               </div>
 
@@ -211,10 +213,10 @@ export default function App() {
               <div className="flex flex-wrap justify-center gap-2">
                 {[
                   { label: '🫁 CFTR F508del', sublabel: 'CF · ♂ age 24', gene: 'CFTR', hgvs: 'c.1521_1523del', disease: 'Cystic Fibrosis (CFTR)', age: 24, fc: 'f508del', sex: 'MALE' as const },
-                  { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · ♂ age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: 'exon51_skippable', sex: 'MALE' as const },
+                  { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · ♂ age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: null, sex: 'MALE' as const },
                   { label: '🧠 SOD1 A4V', sublabel: 'ALS · age 52', gene: 'SOD1', hgvs: 'c.14C>T', disease: 'ALS — SOD1', age: 52, fc: 'sod1_als', sex: null },
-                  { label: '❤️ TTR V30M', sublabel: 'Amyloidosis · age 45', gene: 'TTR', hgvs: 'c.148G>A', disease: 'TTR Amyloidosis', age: 45, fc: 'ttr_variant', sex: null },
-                  { label: '🎗️ BRCA2 c.5946del', sublabel: 'Hereditary Cancer · ♀ age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: 'brca2_lof', sex: 'FEMALE' as const },
+                  { label: '❤️ TTR V30M', sublabel: 'Amyloidosis · age 45', gene: 'TTR', hgvs: 'c.148G>A', disease: 'TTR Amyloidosis', age: 45, fc: null, sex: null },
+                  { label: '🎗️ BRCA2 c.5946del', sublabel: 'Hereditary Cancer · ♀ age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: null, sex: 'FEMALE' as const },
                   { label: '🩸 HBB HbS', sublabel: 'Sickle Cell · age 28', gene: 'HBB', hgvs: 'c.20A>T', disease: 'Sickle Cell Disease', age: 28, fc: 'sickle_cell', sex: null },
                   { label: '🧬 APOE4', sublabel: "Alzheimer's risk · age 60", gene: 'APOE', hgvs: 'c.388T>C', disease: "Alzheimer's Disease (APOE)", age: 60, fc: null, sex: null },
                 ].map(demo => (
