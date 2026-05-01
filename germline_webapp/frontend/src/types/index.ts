@@ -71,6 +71,7 @@ export interface Tier2Result {
   trials: TrialResult[]
   total_fetched: number
   total_after_scoring: number
+  total_ineligible?: number
 }
 
 export interface PipelineEntry {
