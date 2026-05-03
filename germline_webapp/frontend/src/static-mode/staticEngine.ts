@@ -466,7 +466,7 @@ async function fetchTier1OpenTargets(gene: string): Promise<DrugEntry[]> {
       if (!isApproved && (phase == null || phase < 3)) continue
 
       drugs.push({
-        drug_name: name,
+        drug_name: titleCaseDrug(name),
         action: row.mechanismOfAction || 'See OpenTargets for mechanism of action',
         fda_approved: isApproved,
         approval_year: null,
@@ -478,10 +478,55 @@ async function fetchTier1OpenTargets(gene: string): Promise<DrugEntry[]> {
         source: 'OpenTargets',
       })
     }
+
+    // Merge individual components into known combination products
+    const COMBINATION_DRUGS: Record<string, { components: string[]; brandName: string; combinedAction: string }> = {
+      'TRIKAFTA': {
+        components: ['ELEXACAFTOR', 'TEZACAFTOR', 'IVACAFTOR'],
+        brandName: 'Trikafta (elexacaftor/tezacaftor/ivacaftor)',
+        combinedAction: 'Triple CFTR modulator — corrects protein folding and potentiates channel opening',
+      },
+      'ORKAMBI': {
+        components: ['LUMACAFTOR', 'IVACAFTOR'],
+        brandName: 'Orkambi (lumacaftor/ivacaftor)',
+        combinedAction: 'Dual CFTR modulator — corrects protein folding and potentiates channel opening',
+      },
+      'SYMDEKO': {
+        components: ['TEZACAFTOR', 'IVACAFTOR'],
+        brandName: 'Symdeko (tezacaftor/ivacaftor)',
+        combinedAction: 'Dual CFTR modulator — corrects protein folding and potentiates channel opening',
+      },
+    }
+
+    const drugNamesUpper = new Set(drugs.map(d => d.drug_name.toUpperCase()))
+    for (const [, combo] of Object.entries(COMBINATION_DRUGS)) {
+      const matchedComponents = combo.components.filter(c => drugNamesUpper.has(c))
+      if (matchedComponents.length >= 2) {
+        const compsLower = new Set(combo.components.map(c => c.toLowerCase()))
+        const filtered = drugs.filter(d => !compsLower.has(d.drug_name.toLowerCase()))
+        filtered.unshift({
+          drug_name: combo.brandName,
+          action: combo.combinedAction,
+          fda_approved: true,
+          approval_year: null,
+          evidence_level: 'FDA_approved',
+          line: null,
+          caveat: 'Verify indication with your physician.',
+          source: 'OpenTargets',
+        })
+        return filtered
+      }
+    }
+
     return drugs
   } catch {
     return []
   }
+}
+
+function titleCaseDrug(name: string): string {
+  if (name !== name.toUpperCase() && name !== name.toLowerCase()) return name
+  return name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
 }
 
 const DGIDB_URL = 'https://dgidb.org/api/graphql'
