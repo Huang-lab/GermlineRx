@@ -273,29 +273,57 @@ async function fetchGnomadVariantLevel(gene: string, hgvs: string): Promise<{ af
   const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r4`
   const curatedAf = GNOMAD_CURATED[curatedKey] ?? null
 
-  // Skip API for gene-only or non-HGVS inputs
   if (!hgvs || hgvs === 'unknown' || hgvs.startsWith('del_')) {
     return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
   }
 
   try {
-    // Call our Vercel serverless function — avoids browser CORS restriction on gnomAD
-    const res = await fetch('/api/gnomad', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gene: geneUpper, hgvs }),
-      signal: AbortSignal.timeout(12000),
-    })
-    if (!res.ok) return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
+    // Direct browser call to MyVariant.info (CORS-friendly, no proxy needed)
+    const q = encodeURIComponent(`${geneUpper} ${hgvs}`)
+    const mvRes = await fetch(
+      `https://myvariant.info/v1/query?q=${q}&fields=gnomad_genome.af.af,gnomad_exome.af.af,clinvar.variant_id,_id,vcf&assembly=hg38&size=1`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    if (!mvRes.ok) throw new Error('MyVariant failed')
 
-    const data = await res.json()
-    return {
-      af: data.af ?? curatedAf,
-      gnomad_url: data.gnomad_url || geneLevelUrl,
-      clinvar_id: data.clinvar_id || null,
+    const mvJson = await mvRes.json()
+    const hit = mvJson?.hits?.[0]
+    if (!hit) return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
+
+    const clinvarId = hit?.clinvar?.variant_id != null ? String(hit.clinvar.variant_id) : null
+    const af = hit?.gnomad_genome?.af?.af ?? hit?.gnomad_exome?.af?.af ?? null
+
+    // Build variant-specific gnomAD URL
+    let variantUrl = geneLevelUrl
+    const chrMatch = (hit._id || '').match(/^chr(\w+):/)
+    if (chrMatch && hit?.vcf?.position && hit?.vcf?.ref && hit?.vcf?.alt) {
+      const variantId = `${chrMatch[1]}-${hit.vcf.position}-${hit.vcf.ref}-${hit.vcf.alt}`
+      variantUrl = `https://gnomad.broadinstitute.org/variant/${variantId}?dataset=gnomad_r4`
+    }
+
+    if (af !== null) {
+      return { af, gnomad_url: variantUrl, clinvar_id: clinvarId }
+    }
+
+    // MyVariant didn't have gnomAD AF — try serverless proxy as fallback
+    try {
+      const proxyRes = await fetch('/api/gnomad', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gene: geneUpper, hgvs }),
+        signal: AbortSignal.timeout(12000),
+      })
+      if (!proxyRes.ok) return { af: curatedAf, gnomad_url: variantUrl, clinvar_id: clinvarId }
+      const proxyData = await proxyRes.json()
+      return {
+        af: proxyData.af ?? curatedAf,
+        gnomad_url: proxyData.gnomad_url || variantUrl,
+        clinvar_id: proxyData.clinvar_id || clinvarId,
+      }
+    } catch {
+      return { af: curatedAf, gnomad_url: variantUrl, clinvar_id: clinvarId }
     }
   } catch {
-    // Fallback: local dev without vercel dev, or network error
     return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
   }
 }
