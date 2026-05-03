@@ -11,6 +11,9 @@
  * - Enrichment: not available (requires server-side datalake files)
  */
 
+import { GENE_TO_ENSEMBL } from './geneToEnsembl'
+import { lookupVariantDrugKB, lookupSurveillanceKB } from './variantDrugKB'
+
 import type {
   NormalizeResponse,
   AnalyzeResponse,
@@ -271,29 +274,57 @@ async function fetchGnomadVariantLevel(gene: string, hgvs: string): Promise<{ af
   const geneLevelUrl = `https://gnomad.broadinstitute.org/gene/${geneUpper}?dataset=gnomad_r4`
   const curatedAf = GNOMAD_CURATED[curatedKey] ?? null
 
-  // Skip API for gene-only or non-HGVS inputs
   if (!hgvs || hgvs === 'unknown' || hgvs.startsWith('del_')) {
     return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
   }
 
   try {
-    // Call our Vercel serverless function — avoids browser CORS restriction on gnomAD
-    const res = await fetch('/api/gnomad', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gene: geneUpper, hgvs }),
-      signal: AbortSignal.timeout(12000),
-    })
-    if (!res.ok) return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
+    // Direct browser call to MyVariant.info (CORS-friendly, no proxy needed)
+    const q = encodeURIComponent(`${geneUpper} ${hgvs}`)
+    const mvRes = await fetch(
+      `https://myvariant.info/v1/query?q=${q}&fields=gnomad_genome.af.af,gnomad_exome.af.af,clinvar.variant_id,_id,vcf&assembly=hg38&size=1`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    if (!mvRes.ok) throw new Error('MyVariant failed')
 
-    const data = await res.json()
-    return {
-      af: data.af ?? curatedAf,
-      gnomad_url: data.gnomad_url || geneLevelUrl,
-      clinvar_id: data.clinvar_id || null,
+    const mvJson = await mvRes.json()
+    const hit = mvJson?.hits?.[0]
+    if (!hit) return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
+
+    const clinvarId = hit?.clinvar?.variant_id != null ? String(hit.clinvar.variant_id) : null
+    const af = hit?.gnomad_genome?.af?.af ?? hit?.gnomad_exome?.af?.af ?? null
+
+    // Build variant-specific gnomAD URL
+    let variantUrl = geneLevelUrl
+    const chrMatch = (hit._id || '').match(/^chr(\w+):/)
+    if (chrMatch && hit?.vcf?.position && hit?.vcf?.ref && hit?.vcf?.alt) {
+      const variantId = `${chrMatch[1]}-${hit.vcf.position}-${hit.vcf.ref}-${hit.vcf.alt}`
+      variantUrl = `https://gnomad.broadinstitute.org/variant/${variantId}?dataset=gnomad_r4`
+    }
+
+    if (af !== null) {
+      return { af, gnomad_url: variantUrl, clinvar_id: clinvarId }
+    }
+
+    // MyVariant didn't have gnomAD AF — try serverless proxy as fallback
+    try {
+      const proxyRes = await fetch('/api/gnomad', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gene: geneUpper, hgvs }),
+        signal: AbortSignal.timeout(12000),
+      })
+      if (!proxyRes.ok) return { af: curatedAf, gnomad_url: variantUrl, clinvar_id: clinvarId }
+      const proxyData = await proxyRes.json()
+      return {
+        af: proxyData.af ?? curatedAf,
+        gnomad_url: proxyData.gnomad_url || variantUrl,
+        clinvar_id: proxyData.clinvar_id || clinvarId,
+      }
+    } catch {
+      return { af: curatedAf, gnomad_url: variantUrl, clinvar_id: clinvarId }
     }
   } catch {
-    // Fallback: local dev without vercel dev, or network error
     return { af: curatedAf, gnomad_url: geneLevelUrl, clinvar_id: null }
   }
 }
@@ -364,22 +395,139 @@ async function fetchTier0(gene: string, hgvs: string): Promise<Tier0Result> {
   }
 }
 
-// ─── Tier 1: OpenFDA (primary) → DGIdb (fallback) ────────────────────────────
+// ─── Tier 1: OpenTargets (primary) → DGIdb (fallback) ───────────────────────
 
-async function fetchTier1OpenFDA(gene: string): Promise<DrugEntry[]> {
+const OT_GRAPHQL = 'https://api.platform.opentargets.org/api/v4/graphql'
+
+async function resolveEnsemblId(gene: string): Promise<string | null> {
+  const mapped = GENE_TO_ENSEMBL[gene.toUpperCase()]
+  if (mapped) return mapped
+
   try {
-    const res = await fetch('/api/openfda-tier1', {
+    const query = `query { search(queryString: "${gene}", entityNames: ["target"], page: { size: 1, index: 0 }) { hits { id entity } } }`
+    const res = await fetch(OT_GRAPHQL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gene }),
-      signal: AbortSignal.timeout(12000),
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const hit = json?.data?.search?.hits?.[0]
+    return hit?.entity === 'target' ? hit.id : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchTier1OpenTargets(gene: string): Promise<DrugEntry[]> {
+  const ensemblId = await resolveEnsemblId(gene)
+  if (!ensemblId) return []
+
+  try {
+    const query = `
+      query knownDrugs($ensemblId: String!) {
+        target(ensemblId: $ensemblId) {
+          knownDrugs(size: 30) {
+            rows {
+              drug {
+                name
+                maximumClinicalTrialPhase
+                isApproved
+              }
+              disease { name }
+              phase
+              mechanismOfAction
+            }
+          }
+        }
+      }
+    `
+    const res = await fetch(OT_GRAPHQL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables: { ensemblId } }),
+      signal: AbortSignal.timeout(10000),
     })
     if (!res.ok) return []
     const json = await res.json()
-    return json?.drugs || []
+    const rows = json?.data?.target?.knownDrugs?.rows || []
+
+    const seen = new Set<string>()
+    const drugs: DrugEntry[] = []
+    for (const row of rows) {
+      const name: string = row.drug?.name
+      if (!name || seen.has(name.toLowerCase())) continue
+      seen.add(name.toLowerCase())
+
+      const isApproved: boolean = row.drug?.isApproved === true ||
+        (row.drug?.maximumClinicalTrialPhase ?? 0) >= 4
+      const phase: number | null = row.phase ?? row.drug?.maximumClinicalTrialPhase ?? null
+
+      if (!isApproved && (phase == null || phase < 3)) continue
+
+      drugs.push({
+        drug_name: titleCaseDrug(name),
+        action: row.mechanismOfAction || 'See OpenTargets for mechanism of action',
+        fda_approved: isApproved,
+        approval_year: null,
+        evidence_level: isApproved ? 'FDA_approved' : `Phase ${phase}`,
+        line: null,
+        caveat: row.disease?.name
+          ? `Indication: ${row.disease.name}. Verify with your physician.`
+          : 'Verify indication and approval status with your physician.',
+        source: 'OpenTargets',
+      })
+    }
+
+    // Merge individual components into known combination products
+    const COMBINATION_DRUGS: Record<string, { components: string[]; brandName: string; combinedAction: string }> = {
+      'TRIKAFTA': {
+        components: ['ELEXACAFTOR', 'TEZACAFTOR', 'IVACAFTOR'],
+        brandName: 'Trikafta (elexacaftor/tezacaftor/ivacaftor)',
+        combinedAction: 'Triple CFTR modulator — corrects protein folding and potentiates channel opening',
+      },
+      'ORKAMBI': {
+        components: ['LUMACAFTOR', 'IVACAFTOR'],
+        brandName: 'Orkambi (lumacaftor/ivacaftor)',
+        combinedAction: 'Dual CFTR modulator — corrects protein folding and potentiates channel opening',
+      },
+      'SYMDEKO': {
+        components: ['TEZACAFTOR', 'IVACAFTOR'],
+        brandName: 'Symdeko (tezacaftor/ivacaftor)',
+        combinedAction: 'Dual CFTR modulator — corrects protein folding and potentiates channel opening',
+      },
+    }
+
+    const drugNamesUpper = new Set(drugs.map(d => d.drug_name.toUpperCase()))
+    for (const [, combo] of Object.entries(COMBINATION_DRUGS)) {
+      const matchedComponents = combo.components.filter(c => drugNamesUpper.has(c))
+      if (matchedComponents.length >= 2) {
+        const compsLower = new Set(combo.components.map(c => c.toLowerCase()))
+        const filtered = drugs.filter(d => !compsLower.has(d.drug_name.toLowerCase()))
+        filtered.unshift({
+          drug_name: combo.brandName,
+          action: combo.combinedAction,
+          fda_approved: true,
+          approval_year: null,
+          evidence_level: 'FDA_approved',
+          line: null,
+          caveat: 'Verify indication with your physician.',
+          source: 'OpenTargets',
+        })
+        return filtered
+      }
+    }
+
+    return drugs
   } catch {
     return []
   }
+}
+
+function titleCaseDrug(name: string): string {
+  if (name !== name.toUpperCase() && name !== name.toLowerCase()) return name
+  return name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
 }
 
 const DGIDB_URL = 'https://dgidb.org/api/graphql'
@@ -438,11 +586,28 @@ async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
   }
 }
 
-async function fetchTier1(gene: string): Promise<Tier1Result> {
-  const openFdaDrugs = await fetchTier1OpenFDA(gene)
-  if (openFdaDrugs.length > 0) return { drugs: openFdaDrugs, surveillance: [] }
+async function fetchTier1(gene: string, functionalClass: string | null): Promise<Tier1Result> {
+  const kbDrugs = lookupVariantDrugKB(gene, functionalClass)
+  const kbSurveillance = lookupSurveillanceKB(gene)
+
+  if (kbDrugs.length > 0) {
+    return { drugs: kbDrugs, surveillance: kbSurveillance }
+  }
+
+  // Fallback for genes not in KB
+  const otDrugs = await fetchTier1OpenTargets(gene)
+  if (otDrugs.length > 0) {
+    return {
+      drugs: otDrugs.map(d => ({
+        ...d,
+        caveat: (d.caveat || '') + ' ⚠ Automated match — verify with your physician.',
+      })),
+      surveillance: kbSurveillance,
+    }
+  }
+
   const dgidbDrugs = await fetchTier1DGIdb(gene)
-  return { drugs: dgidbDrugs, surveillance: [] }
+  return { drugs: dgidbDrugs, surveillance: kbSurveillance }
 }
 
 // ─── Gene-specific search terms (shared by Tier 2 and Tier 3) ────────────────
@@ -475,6 +640,26 @@ const SEARCH_TERMS: Record<string, string[]> = {
   "CHEK2":  ["CHEK2 breast cancer surveillance"],
 }
 
+function scoreTrialRelevance(trial: TrialResult, gene: string): number {
+  let score = 0
+  const geneUpper = gene.toUpperCase()
+
+  if (trial.title.toUpperCase().includes(geneUpper)) score += 30
+  if (trial.conditions.some(c => c.toUpperCase().includes(geneUpper))) score += 20
+
+  const phaseStr = (trial.phase || '').toUpperCase()
+  if (phaseStr.includes('PHASE3') || phaseStr.includes('PHASE 3')) score += 15
+  else if (phaseStr.includes('PHASE2') || phaseStr.includes('PHASE 2')) score += 10
+  else if (phaseStr.includes('PHASE1') || phaseStr.includes('PHASE 1')) score += 5
+
+  if (trial.eligibility_overall === 'LIKELY_ELIGIBLE') score += 10
+  else if (trial.eligibility_overall === 'CHECK_WITH_DOCTOR') score += 5
+
+  if (trial.criterion_checks.some(c => c.criterion.includes(geneUpper) && c.status === 'MET')) score += 15
+
+  return score
+}
+
 // ─── Tier 2: ClinicalTrials.gov — recruiting trials ──────────────────────────
 
 function splitCriteriaText(text: string): [string, string] {
@@ -488,10 +673,10 @@ function cleanBullet(raw: string): string {
     .replace(/^[\d]+\.\s*/, '')   // strip "1. "
     .replace(/^[a-z]\)\s*/i, '')  // strip "a) "
     .trim()
-  if (s.length > 90) {
+  if (s.length > 200) {
     const cut = s.search(/[.;—]/)
-    if (cut > 30) s = s.slice(0, cut + 1)
-    else s = s.slice(0, 90) + '…'
+    if (cut > 50) s = s.slice(0, cut + 1)
+    else s = s.slice(0, 200) + '…'
   }
   return s
 }
@@ -515,6 +700,18 @@ const EXCLUSION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   { label: 'Prior gene therapy',          pattern: /prior gene therapy|previous gene therapy/i },
   { label: 'Pre-existing AAV antibodies', pattern: /aav antibod|neutralizing antibod.*aav/i },
   { label: 'Prior organ transplant',      pattern: /organ transplant|transplant recipient/i },
+  { label: 'Active infection',            pattern: /active infection|systemic infection|uncontrolled infection/i },
+  { label: 'Uncontrolled diabetes',       pattern: /uncontrolled diabetes|HbA1c\s*>\s*\d/i },
+  { label: 'Concurrent experimental therapy', pattern: /concurrent.*investigational|another.*clinical trial|experimental.*therapy/i },
+  { label: 'Thrombocytopenia',            pattern: /thrombocytopenia|platelet count\s*<|low platelet/i },
+  { label: 'Cardiac conditions',          pattern: /heart failure|NYHA class|QTc\s*prolongation|cardiac arrhythmia|unstable angina/i },
+  { label: 'Bleeding disorders',          pattern: /bleeding disorder|coagulopathy|anticoagulant/i },
+  { label: 'Autoimmune disease',          pattern: /autoimmune disease|autoimmune disorder|systemic lupus/i },
+  { label: 'Substance abuse',             pattern: /substance abuse|alcohol abuse|drug abuse/i },
+  { label: 'CNS metastases',              pattern: /brain metastas|CNS metastas|leptomeningeal/i },
+  { label: 'Prior allergic reaction',     pattern: /allergic reaction|hypersensitivity|anaphylaxis/i },
+  { label: 'Severe lung disease',         pattern: /FEV1\s*<|severe.*pulmonary|oxygen dependent|respiratory failure/i },
+  { label: 'Minimum weight/BMI',          pattern: /body weight\s*<|BMI\s*<|minimum weight/i },
 ]
 
 function parseAgeYears(ageStr: string): number | null {
@@ -676,18 +873,41 @@ async function fetchTier2(gene: string, disease: string, age: number | null, sex
   try {
     const geneUpper = gene.toUpperCase()
     const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
-    const query = encodeURIComponent(terms[0])
-    const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=15&format=json`
-    const res = await fetch(url)
-    const json = await res.json()
-    const studies: RawStudy[] = json?.studies || []
-    const relevant = filterRelevantStudies(studies, gene)
+
+    const allStudies: RawStudy[] = []
+    const seenNct = new Set<string>()
+
+    const fetches = terms.map(async (term) => {
+      const query = encodeURIComponent(term)
+      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=15&format=json`
+      const res = await fetch(url)
+      const json = await res.json()
+      return (json?.studies || []) as RawStudy[]
+    })
+
+    const results = await Promise.allSettled(fetches)
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue
+      for (const study of r.value) {
+        const nctId = study.protocolSection?.identificationModule?.nctId
+        if (nctId && !seenNct.has(nctId)) {
+          seenNct.add(nctId)
+          allStudies.push(study)
+        }
+      }
+    }
+
+    const relevant = filterRelevantStudies(allStudies, gene)
     const allTrials = relevant.map(s => mapStudyToTrial(s, age, gene, sex ?? null))
+
+    allTrials.sort((a, b) => scoreTrialRelevance(b, gene) - scoreTrialRelevance(a, gene))
+
     const eligibleTrials = allTrials.filter(t => t.eligibility_overall !== 'INELIGIBLE')
     const ineligibleCount = allTrials.length - eligibleTrials.length
+
     return {
       trials: eligibleTrials,
-      total_fetched: studies.length,
+      total_fetched: allStudies.length,
       total_after_scoring: relevant.length,
       total_ineligible: ineligibleCount,
     }
@@ -702,17 +922,36 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
   try {
     const geneUpper = gene.toUpperCase()
     const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
-    const query = encodeURIComponent(terms[0])
-    const url = [
-      'https://clinicaltrials.gov/api/v2/studies',
-      `?query.term=${query}`,
-      `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
-      `&pageSize=20&format=json`,
-    ].join('')
 
-    const res = await fetch(url)
-    const json = await res.json()
-    const studies: RawStudy[] = json?.studies || []
+    const allStudies: RawStudy[] = []
+    const seenNct = new Set<string>()
+
+    const fetches = terms.map(async (term) => {
+      const query = encodeURIComponent(term)
+      const url = [
+        'https://clinicaltrials.gov/api/v2/studies',
+        `?query.term=${query}`,
+        `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
+        `&pageSize=20&format=json`,
+      ].join('')
+      const res = await fetch(url)
+      const json = await res.json()
+      return (json?.studies || []) as RawStudy[]
+    })
+
+    const results = await Promise.allSettled(fetches)
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue
+      for (const study of r.value) {
+        const nctId = study.protocolSection?.identificationModule?.nctId
+        if (nctId && !seenNct.has(nctId)) {
+          seenNct.add(nctId)
+          allStudies.push(study)
+        }
+      }
+    }
+
+    const studies = allStudies
     const relevant = filterRelevantStudies(studies, gene)
 
     const EARLY_PHASES = new Set(['PHASE1', 'PHASE2', 'EARLY_PHASE1', 'NA'])
@@ -897,7 +1136,7 @@ export async function staticAnalyze(
 
   const [tier0, tier1, tier2] = await Promise.all([
     fetchTier0(gene, hgvs),
-    fetchTier1(gene),
+    fetchTier1(gene, functionalClass),
     fetchTier2(gene, disease, age, sex),
   ])
 

@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import type { TrialResult } from '../../types'
+import React from 'react'
 
 const ELIGIBILITY_STYLES: Record<string, { bg: string; border: string; text: string; label: string }> = {
   ELIGIBLE:           { bg: 'bg-green-50',  border: 'border-green-300',  text: 'text-green-700',  label: 'Eligible' },
@@ -21,21 +21,22 @@ const STATUS_COLORS: Record<string, string> = {
   WARNING: 'text-yellow-600',
 }
 
-interface Props { trial: TrialResult }
+interface Props { trial: TrialResult; gene?: string }
 
-const MAX_BULLETS = 4
+function highlightGene(text: string, gene?: string): React.ReactNode {
+  if (!gene) return text
+  const regex = new RegExp(`(\\b${gene}\\b)`, 'gi')
+  const parts = text.split(regex)
+  return parts.map((part, i) =>
+    regex.test(part) ? <strong key={i} className="text-brand-700">{part}</strong> : part
+  )
+}
 
-export default function TrialCard({ trial }: Props) {
+export default function TrialCard({ trial, gene }: Props) {
   const style = ELIGIBILITY_STYLES[trial.eligibility_overall] || ELIGIBILITY_STYLES.CHECK_WITH_DOCTOR
   const hasInclusion = trial.inclusion_bullets.length > 0
   const hasExclusion = trial.exclusion_bullets.length > 0
   const structuredChecks = trial.criterion_checks.filter(c => !c.isExclusion)
-  const [inclExpanded, setInclExpanded] = useState(false)
-  const [exclExpanded, setExclExpanded] = useState(false)
-  const visibleIncl = inclExpanded ? trial.inclusion_bullets : trial.inclusion_bullets.slice(0, MAX_BULLETS)
-  const visibleExcl = exclExpanded ? trial.exclusion_bullets : trial.exclusion_bullets.slice(0, MAX_BULLETS)
-  const moreIncl = trial.inclusion_bullets.length - MAX_BULLETS
-  const moreExcl = trial.exclusion_bullets.length - MAX_BULLETS
 
   return (
     <div className={`border ${style.border} rounded-xl p-4 ${style.bg}`}>
@@ -52,7 +53,9 @@ export default function TrialCard({ trial }: Props) {
         <span className="text-xs text-gray-400 font-mono ml-auto">{trial.nct_id}</span>
       </div>
 
-      <h4 className="text-sm font-semibold text-gray-800 leading-snug mb-1">{trial.title}</h4>
+      <h4 className="text-sm font-semibold text-gray-800 leading-snug mb-1">
+        {trial.title.length > 120 ? trial.title.slice(0, 120) + '…' : trial.title}
+      </h4>
 
       {/* Plain-language eligibility summary */}
       {trial.eligibility_plain && (
@@ -90,54 +93,54 @@ export default function TrialCard({ trial }: Props) {
         </div>
       )}
 
+      {trial.criterion_checks.filter(c => c.isExclusion).length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Possible Exclusions to Discuss</p>
+          <div className="flex flex-wrap gap-1.5">
+            {trial.criterion_checks.filter(c => c.isExclusion).map((c, i) => (
+              <span key={i} className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-1 rounded-full">
+                ⚠ {c.criterion}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Full criteria — bullet points from ClinicalTrials.gov */}
       {(hasInclusion || hasExclusion) && (
-        <div className="space-y-3">
-          {hasInclusion && (
-            <div>
-              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Inclusion Criteria</p>
-              <ul className="space-y-1">
-                {visibleIncl.map((b, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
-                    <span className="mt-0.5 text-green-500 font-bold flex-shrink-0">•</span>
-                    {b}
-                  </li>
-                ))}
-              </ul>
-              {moreIncl > 0 && (
-                <button
-                  type="button"
-                  className="mt-1 text-xs text-brand-600 hover:underline"
-                  onClick={() => setInclExpanded(v => !v)}
-                >
-                  {inclExpanded ? 'Show less ▴' : `+ ${moreIncl} more ▾`}
-                </button>
-              )}
-            </div>
-          )}
-          {hasExclusion && (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Exclusion Criteria</p>
-              <ul className="space-y-1">
-                {visibleExcl.map((b, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-gray-500">
-                    <span className="mt-0.5 text-red-400 font-bold flex-shrink-0">•</span>
-                    {b}
-                  </li>
-                ))}
-              </ul>
-              {moreExcl > 0 && (
-                <button
-                  type="button"
-                  className="mt-1 text-xs text-brand-600 hover:underline"
-                  onClick={() => setExclExpanded(v => !v)}
-                >
-                  {exclExpanded ? 'Show less ▴' : `+ ${moreExcl} more ▾`}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <details className="mt-2">
+          <summary className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer">
+            Show full eligibility criteria (for your doctor)
+          </summary>
+          <div className="mt-2 space-y-3 border-t border-gray-200 pt-2">
+            {hasInclusion && (
+              <div>
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Inclusion Criteria</p>
+                <ul className="space-y-1">
+                  {trial.inclusion_bullets.map((b, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
+                      <span className="mt-0.5 text-green-500 font-bold flex-shrink-0">•</span>
+                      {highlightGene(b, gene)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {hasExclusion && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Exclusion Criteria</p>
+                <ul className="space-y-1">
+                  {trial.exclusion_bullets.map((b, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-gray-500">
+                      <span className="mt-0.5 text-red-400 font-bold flex-shrink-0">•</span>
+                      {highlightGene(b, gene)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
       )}
 
       {/* Footer */}

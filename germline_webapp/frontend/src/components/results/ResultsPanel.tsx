@@ -148,7 +148,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
               <div key={i} className="border border-gray-200 rounded-lg p-3 bg-white">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <a
-                    href={`https://labels.fda.gov/?query=${encodeURIComponent(drug.drug_name.split(' ')[0])}`}
+                    href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drug.drug_name)}`}
                     target="_blank" rel="noopener noreferrer"
                     className="text-sm font-bold text-brand-700 hover:underline"
                   >
@@ -176,7 +176,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
                 <p className="text-xs text-gray-400 mt-1">
                   Source: {drug.source || 'DGIdb'}{' '}
                   <a
-                    href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&query=${encodeURIComponent(drug.drug_name.split(' ')[0])}`}
+                    href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(drug.drug_name.split('(')[0].trim().split('/')[0].trim())}`}
                     target="_blank" rel="noopener noreferrer"
                     className="text-brand-500 hover:underline ml-1"
                   >
@@ -212,7 +212,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
         ) : (
           <div className="space-y-3">
             {data.tier2.trials.map((trial, i) => (
-              <TrialCard key={i} trial={trial} />
+              <TrialCard key={i} trial={trial} gene={data.gene} />
             ))}
           </div>
         )}
