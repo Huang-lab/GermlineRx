@@ -212,7 +212,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
         ) : (
           <div className="space-y-3">
             {data.tier2.trials.map((trial, i) => (
-              <TrialCard key={i} trial={trial} />
+              <TrialCard key={i} trial={trial} gene={data.gene} />
             ))}
           </div>
         )}

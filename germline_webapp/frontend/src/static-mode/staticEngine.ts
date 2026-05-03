@@ -549,6 +549,26 @@ const SEARCH_TERMS: Record<string, string[]> = {
   "CHEK2":  ["CHEK2 breast cancer surveillance"],
 }
 
+function scoreTrialRelevance(trial: TrialResult, gene: string): number {
+  let score = 0
+  const geneUpper = gene.toUpperCase()
+
+  if (trial.title.toUpperCase().includes(geneUpper)) score += 30
+  if (trial.conditions.some(c => c.toUpperCase().includes(geneUpper))) score += 20
+
+  const phaseStr = (trial.phase || '').toUpperCase()
+  if (phaseStr.includes('PHASE3') || phaseStr.includes('PHASE 3')) score += 15
+  else if (phaseStr.includes('PHASE2') || phaseStr.includes('PHASE 2')) score += 10
+  else if (phaseStr.includes('PHASE1') || phaseStr.includes('PHASE 1')) score += 5
+
+  if (trial.eligibility_overall === 'LIKELY_ELIGIBLE') score += 10
+  else if (trial.eligibility_overall === 'CHECK_WITH_DOCTOR') score += 5
+
+  if (trial.criterion_checks.some(c => c.criterion.includes(geneUpper) && c.status === 'MET')) score += 15
+
+  return score
+}
+
 // ─── Tier 2: ClinicalTrials.gov — recruiting trials ──────────────────────────
 
 function splitCriteriaText(text: string): [string, string] {
@@ -562,10 +582,10 @@ function cleanBullet(raw: string): string {
     .replace(/^[\d]+\.\s*/, '')   // strip "1. "
     .replace(/^[a-z]\)\s*/i, '')  // strip "a) "
     .trim()
-  if (s.length > 90) {
+  if (s.length > 200) {
     const cut = s.search(/[.;—]/)
-    if (cut > 30) s = s.slice(0, cut + 1)
-    else s = s.slice(0, 90) + '…'
+    if (cut > 50) s = s.slice(0, cut + 1)
+    else s = s.slice(0, 200) + '…'
   }
   return s
 }
@@ -589,6 +609,18 @@ const EXCLUSION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   { label: 'Prior gene therapy',          pattern: /prior gene therapy|previous gene therapy/i },
   { label: 'Pre-existing AAV antibodies', pattern: /aav antibod|neutralizing antibod.*aav/i },
   { label: 'Prior organ transplant',      pattern: /organ transplant|transplant recipient/i },
+  { label: 'Active infection',            pattern: /active infection|systemic infection|uncontrolled infection/i },
+  { label: 'Uncontrolled diabetes',       pattern: /uncontrolled diabetes|HbA1c\s*>\s*\d/i },
+  { label: 'Concurrent experimental therapy', pattern: /concurrent.*investigational|another.*clinical trial|experimental.*therapy/i },
+  { label: 'Thrombocytopenia',            pattern: /thrombocytopenia|platelet count\s*<|low platelet/i },
+  { label: 'Cardiac conditions',          pattern: /heart failure|NYHA class|QTc\s*prolongation|cardiac arrhythmia|unstable angina/i },
+  { label: 'Bleeding disorders',          pattern: /bleeding disorder|coagulopathy|anticoagulant/i },
+  { label: 'Autoimmune disease',          pattern: /autoimmune disease|autoimmune disorder|systemic lupus/i },
+  { label: 'Substance abuse',             pattern: /substance abuse|alcohol abuse|drug abuse/i },
+  { label: 'CNS metastases',              pattern: /brain metastas|CNS metastas|leptomeningeal/i },
+  { label: 'Prior allergic reaction',     pattern: /allergic reaction|hypersensitivity|anaphylaxis/i },
+  { label: 'Severe lung disease',         pattern: /FEV1\s*<|severe.*pulmonary|oxygen dependent|respiratory failure/i },
+  { label: 'Minimum weight/BMI',          pattern: /body weight\s*<|BMI\s*<|minimum weight/i },
 ]
 
 function parseAgeYears(ageStr: string): number | null {
@@ -750,18 +782,41 @@ async function fetchTier2(gene: string, disease: string, age: number | null, sex
   try {
     const geneUpper = gene.toUpperCase()
     const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
-    const query = encodeURIComponent(terms[0])
-    const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=15&format=json`
-    const res = await fetch(url)
-    const json = await res.json()
-    const studies: RawStudy[] = json?.studies || []
-    const relevant = filterRelevantStudies(studies, gene)
+
+    const allStudies: RawStudy[] = []
+    const seenNct = new Set<string>()
+
+    const fetches = terms.map(async (term) => {
+      const query = encodeURIComponent(term)
+      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=15&format=json`
+      const res = await fetch(url)
+      const json = await res.json()
+      return (json?.studies || []) as RawStudy[]
+    })
+
+    const results = await Promise.allSettled(fetches)
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue
+      for (const study of r.value) {
+        const nctId = study.protocolSection?.identificationModule?.nctId
+        if (nctId && !seenNct.has(nctId)) {
+          seenNct.add(nctId)
+          allStudies.push(study)
+        }
+      }
+    }
+
+    const relevant = filterRelevantStudies(allStudies, gene)
     const allTrials = relevant.map(s => mapStudyToTrial(s, age, gene, sex ?? null))
+
+    allTrials.sort((a, b) => scoreTrialRelevance(b, gene) - scoreTrialRelevance(a, gene))
+
     const eligibleTrials = allTrials.filter(t => t.eligibility_overall !== 'INELIGIBLE')
     const ineligibleCount = allTrials.length - eligibleTrials.length
+
     return {
       trials: eligibleTrials,
-      total_fetched: studies.length,
+      total_fetched: allStudies.length,
       total_after_scoring: relevant.length,
       total_ineligible: ineligibleCount,
     }
@@ -776,17 +831,36 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
   try {
     const geneUpper = gene.toUpperCase()
     const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
-    const query = encodeURIComponent(terms[0])
-    const url = [
-      'https://clinicaltrials.gov/api/v2/studies',
-      `?query.term=${query}`,
-      `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
-      `&pageSize=20&format=json`,
-    ].join('')
 
-    const res = await fetch(url)
-    const json = await res.json()
-    const studies: RawStudy[] = json?.studies || []
+    const allStudies: RawStudy[] = []
+    const seenNct = new Set<string>()
+
+    const fetches = terms.map(async (term) => {
+      const query = encodeURIComponent(term)
+      const url = [
+        'https://clinicaltrials.gov/api/v2/studies',
+        `?query.term=${query}`,
+        `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
+        `&pageSize=20&format=json`,
+      ].join('')
+      const res = await fetch(url)
+      const json = await res.json()
+      return (json?.studies || []) as RawStudy[]
+    })
+
+    const results = await Promise.allSettled(fetches)
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue
+      for (const study of r.value) {
+        const nctId = study.protocolSection?.identificationModule?.nctId
+        if (nctId && !seenNct.has(nctId)) {
+          seenNct.add(nctId)
+          allStudies.push(study)
+        }
+      }
+    }
+
+    const studies = allStudies
     const relevant = filterRelevantStudies(studies, gene)
 
     const EARLY_PHASES = new Set(['PHASE1', 'PHASE2', 'EARLY_PHASE1', 'NA'])

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { TrialResult } from '../../types'
+import React from 'react'
 
 const ELIGIBILITY_STYLES: Record<string, { bg: string; border: string; text: string; label: string }> = {
   ELIGIBLE:           { bg: 'bg-green-50',  border: 'border-green-300',  text: 'text-green-700',  label: 'Eligible' },
@@ -21,11 +22,20 @@ const STATUS_COLORS: Record<string, string> = {
   WARNING: 'text-yellow-600',
 }
 
-interface Props { trial: TrialResult }
+interface Props { trial: TrialResult; gene?: string }
+
+function highlightGene(text: string, gene?: string): React.ReactNode {
+  if (!gene) return text
+  const regex = new RegExp(`(\\b${gene}\\b)`, 'gi')
+  const parts = text.split(regex)
+  return parts.map((part, i) =>
+    regex.test(part) ? <strong key={i} className="text-brand-700">{part}</strong> : part
+  )
+}
 
 const MAX_BULLETS = 4
 
-export default function TrialCard({ trial }: Props) {
+export default function TrialCard({ trial, gene }: Props) {
   const style = ELIGIBILITY_STYLES[trial.eligibility_overall] || ELIGIBILITY_STYLES.CHECK_WITH_DOCTOR
   const hasInclusion = trial.inclusion_bullets.length > 0
   const hasExclusion = trial.exclusion_bullets.length > 0
@@ -100,7 +110,7 @@ export default function TrialCard({ trial }: Props) {
                 {visibleIncl.map((b, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-xs text-gray-700">
                     <span className="mt-0.5 text-green-500 font-bold flex-shrink-0">•</span>
-                    {b}
+                    {highlightGene(b, gene)}
                   </li>
                 ))}
               </ul>
@@ -122,7 +132,7 @@ export default function TrialCard({ trial }: Props) {
                 {visibleExcl.map((b, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-xs text-gray-500">
                     <span className="mt-0.5 text-red-400 font-bold flex-shrink-0">•</span>
-                    {b}
+                    {highlightGene(b, gene)}
                   </li>
                 ))}
               </ul>
