@@ -11,6 +11,8 @@
  * - Enrichment: not available (requires server-side datalake files)
  */
 
+import { GENE_TO_ENSEMBL } from './geneToEnsembl'
+
 import type {
   NormalizeResponse,
   AnalyzeResponse,
@@ -364,19 +366,91 @@ async function fetchTier0(gene: string, hgvs: string): Promise<Tier0Result> {
   }
 }
 
-// ─── Tier 1: OpenFDA (primary) → DGIdb (fallback) ────────────────────────────
+// ─── Tier 1: OpenTargets (primary) → DGIdb (fallback) ───────────────────────
 
-async function fetchTier1OpenFDA(gene: string): Promise<DrugEntry[]> {
+const OT_GRAPHQL = 'https://api.platform.opentargets.org/api/v4/graphql'
+
+async function resolveEnsemblId(gene: string): Promise<string | null> {
+  const mapped = GENE_TO_ENSEMBL[gene.toUpperCase()]
+  if (mapped) return mapped
+
   try {
-    const res = await fetch('/api/openfda-tier1', {
+    const query = `query { search(queryString: "${gene}", entityNames: ["target"], page: { size: 1, index: 0 }) { hits { id entity } } }`
+    const res = await fetch(OT_GRAPHQL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gene }),
-      signal: AbortSignal.timeout(12000),
+      body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const hit = json?.data?.search?.hits?.[0]
+    return hit?.entity === 'target' ? hit.id : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchTier1OpenTargets(gene: string): Promise<DrugEntry[]> {
+  const ensemblId = await resolveEnsemblId(gene)
+  if (!ensemblId) return []
+
+  try {
+    const query = `
+      query knownDrugs($ensemblId: String!) {
+        target(ensemblId: $ensemblId) {
+          knownDrugs(size: 30) {
+            rows {
+              drug {
+                name
+                maximumClinicalTrialPhase
+                isApproved
+              }
+              disease { name }
+              phase
+              mechanismOfAction
+            }
+          }
+        }
+      }
+    `
+    const res = await fetch(OT_GRAPHQL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables: { ensemblId } }),
+      signal: AbortSignal.timeout(10000),
     })
     if (!res.ok) return []
     const json = await res.json()
-    return json?.drugs || []
+    const rows = json?.data?.target?.knownDrugs?.rows || []
+
+    const seen = new Set<string>()
+    const drugs: DrugEntry[] = []
+    for (const row of rows) {
+      const name: string = row.drug?.name
+      if (!name || seen.has(name.toLowerCase())) continue
+      seen.add(name.toLowerCase())
+
+      const isApproved: boolean = row.drug?.isApproved === true ||
+        (row.drug?.maximumClinicalTrialPhase ?? 0) >= 4
+      const phase: number | null = row.phase ?? row.drug?.maximumClinicalTrialPhase ?? null
+
+      if (!isApproved && (phase == null || phase < 3)) continue
+
+      drugs.push({
+        drug_name: name,
+        action: row.mechanismOfAction || 'See OpenTargets for mechanism of action',
+        fda_approved: isApproved,
+        approval_year: null,
+        evidence_level: isApproved ? 'FDA_approved' : `Phase ${phase}`,
+        line: null,
+        caveat: row.disease?.name
+          ? `Indication: ${row.disease.name}. Verify with your physician.`
+          : 'Verify indication and approval status with your physician.',
+        source: 'OpenTargets',
+      })
+    }
+    return drugs
   } catch {
     return []
   }
@@ -439,8 +513,8 @@ async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
 }
 
 async function fetchTier1(gene: string): Promise<Tier1Result> {
-  const openFdaDrugs = await fetchTier1OpenFDA(gene)
-  if (openFdaDrugs.length > 0) return { drugs: openFdaDrugs, surveillance: [] }
+  const otDrugs = await fetchTier1OpenTargets(gene)
+  if (otDrugs.length > 0) return { drugs: otDrugs, surveillance: [] }
   const dgidbDrugs = await fetchTier1DGIdb(gene)
   return { drugs: dgidbDrugs, surveillance: [] }
 }
