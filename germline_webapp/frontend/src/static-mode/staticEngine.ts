@@ -12,7 +12,7 @@
  */
 
 import { GENE_TO_ENSEMBL } from './geneToEnsembl'
-import { lookupVariantDrugKB, lookupSurveillanceKB } from './variantDrugKB'
+import { hasGeneInVariantDrugKB, lookupVariantDrugKB, lookupSurveillanceKB } from './variantDrugKB'
 
 import type {
   NormalizeResponse,
@@ -589,9 +589,16 @@ async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
 async function fetchTier1(gene: string, functionalClass: string | null): Promise<Tier1Result> {
   const kbDrugs = lookupVariantDrugKB(gene, functionalClass)
   const kbSurveillance = lookupSurveillanceKB(gene)
+  const geneInKb = hasGeneInVariantDrugKB(gene)
 
   if (kbDrugs.length > 0) {
     return { drugs: kbDrugs, surveillance: kbSurveillance }
+  }
+
+  // If gene is curated in KB but has no variant-class-matched drug, do not
+  // return noisy fallback matches from broad target-level APIs.
+  if (geneInKb) {
+    return { drugs: [], surveillance: kbSurveillance }
   }
 
   // Fallback for genes not in KB

@@ -12,6 +12,12 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
 
 interface Props { data: AnalyzeResponse; onReset: () => void }
 
+function getDrugSearchTerm(drugName: string): string {
+  const brandMatch = drugName.match(/\(([^)]+)\)/)
+  if (brandMatch?.[1]) return brandMatch[1].trim()
+  return drugName.split('(')[0].trim().split('/')[0].trim()
+}
+
 export default function ResultsPanel({ data, onReset }: Props) {
   const [view, setView] = useState<'patient' | 'clinician'>('patient')
   const status = STATUS_STYLES[data.overall_status] || STATUS_STYLES.NOT_ACTIONABLE
@@ -144,11 +150,13 @@ export default function ResultsPanel({ data, onReset }: Props) {
           <p className="text-sm text-gray-500">No FDA-approved therapies matched for this variant.</p>
         ) : (
           <div className="space-y-3">
-            {data.tier1.drugs.map((drug, i) => (
+            {data.tier1.drugs.map((drug, i) => {
+              const drugSearchTerm = getDrugSearchTerm(drug.drug_name)
+              return (
               <div key={i} className="border border-gray-200 rounded-lg p-3 bg-white">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <a
-                    href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drug.drug_name)}`}
+                    href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drugSearchTerm)}`}
                     target="_blank" rel="noopener noreferrer"
                     className="text-sm font-bold text-brand-700 hover:underline"
                   >
@@ -176,7 +184,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
                 <p className="text-xs text-gray-400 mt-1">
                   Source: {drug.source || 'DGIdb'}{' '}
                   <a
-                    href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(drug.drug_name.split('(')[0].trim().split('/')[0].trim())}`}
+                    href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(drugSearchTerm)}`}
                     target="_blank" rel="noopener noreferrer"
                     className="text-brand-500 hover:underline ml-1"
                   >
@@ -184,7 +192,8 @@ export default function ResultsPanel({ data, onReset }: Props) {
                   </a>
                 </p>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
         {data.tier1.surveillance.length > 0 && (

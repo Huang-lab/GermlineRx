@@ -1365,3 +1365,8 @@ export function lookupSurveillanceKB(gene: string): SurveillanceEntry[] {
       source: e.source,
     }))
 }
+
+export function hasGeneInVariantDrugKB(gene: string): boolean {
+  const geneUpper = gene.toUpperCase()
+  return THERAPY_KB.some(e => e.gene.toUpperCase() === geneUpper)
+}
