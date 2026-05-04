@@ -605,18 +605,25 @@ async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
 
 // ─── FDA OpenFDA drug label search ──────────────────────────────────────────
 
-async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
+async function fetchFDADrugLabels(gene: string, diseaseKeywords: string[]): Promise<DrugEntry[]> {
   try {
+    // clinical_pharmacology is intentionally excluded — it surfaces PGx/metabolism mentions,
+    // not therapeutic indications.
     const queries = [
       `indications_and_usage:${encodeURIComponent(`${gene} mutation`)}`,
       `indications_and_usage:${encodeURIComponent(gene)}`,
-      `clinical_pharmacology:${encodeURIComponent(gene)}`,
     ]
+
+    // Build a set of meaningful disease words from the caller-supplied SEARCH_TERMS keywords.
+    const diseaseWords = new Set<string>(
+      diseaseKeywords.flatMap(kw => kw.toLowerCase().split(/\s+/)).filter(w => w.length > 4)
+    )
+    // Generic markers that indicate mutation-targeted therapy (not incidental mention).
+    const THERAPY_MARKERS = ['mutation', 'gene therapy', 'deficiency', 'syndrome', 'hereditary', 'genetic']
 
     const results: Array<{
       openfda?: { brand_name?: string[]; generic_name?: string[]; application_number?: string[] }
       indications_and_usage?: string[]
-      clinical_pharmacology?: string[]
     }> = []
 
     for (const q of queries) {
@@ -638,13 +645,17 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
     for (const result of results) {
       const brandNames = result?.openfda?.brand_name || []
       const genericNames = result?.openfda?.generic_name || []
-      const rawIndication = [
-        ...(result?.indications_and_usage || []),
-        ...(result?.clinical_pharmacology || []),
-      ].join(' ')
-      // Trim to a sentence or 300 chars, whichever comes first
-      const periodIdx = rawIndication.indexOf('.')
-      const action = rawIndication.slice(0, periodIdx > 30 ? periodIdx + 1 : 300).trim()
+      const rawIndication = (result?.indications_and_usage || []).join(' ')
+
+      // Relevance gate: indication must contain the gene name AND at least one
+      // disease keyword or therapy marker. This filters drugs that only mention
+      // the gene in a pharmacogenomics/metabolism context.
+      const indicationLower = rawIndication.toLowerCase()
+      const geneLower = gene.toLowerCase()
+      if (!indicationLower.includes(geneLower)) continue
+      const hasDiseaseMatch = [...diseaseWords].some(w => indicationLower.includes(w))
+      const hasTherapyMarker = THERAPY_MARKERS.some(m => indicationLower.includes(m))
+      if (!hasDiseaseMatch && !hasTherapyMarker) continue
 
       const rawName = brandNames[0] || genericNames[0] || ''
       if (!rawName) continue
@@ -657,6 +668,10 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
       const key = drugName.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
+
+      // Trim indication to first sentence or 300 chars.
+      const periodIdx = rawIndication.indexOf('.')
+      const action = rawIndication.slice(0, periodIdx > 30 ? periodIdx + 1 : 300).trim()
 
       drugs.push({
         drug_name: titleCaseDrug(drugName),
@@ -678,7 +693,8 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
 async function fetchTier1(gene: string, functionalClass: string | null): Promise<Tier1Result> {
   const kbDrugs = lookupVariantDrugKB(gene, functionalClass).filter(d => d.fda_approved)
   const kbSurveillance = lookupSurveillanceKB(gene)
-  const fdaDrugs = await fetchFDADrugLabels(gene)
+  const diseaseKeywords = SEARCH_TERMS[gene.toUpperCase()] || [`${gene} disease`]
+  const fdaDrugs = await fetchFDADrugLabels(gene, diseaseKeywords)
 
   // Prefer live FDA label data when available; merge curated variant-level FDA entries
   // so known high-confidence examples remain visible when OpenFDA is sparse.
