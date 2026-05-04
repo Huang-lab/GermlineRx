@@ -614,7 +614,7 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
     ]
 
     const results: Array<{
-      openfda?: { brand_name?: string[]; generic_name?: string[] }
+      openfda?: { brand_name?: string[]; generic_name?: string[]; application_number?: string[] }
       indications_and_usage?: string[]
       clinical_pharmacology?: string[]
     }> = []
@@ -651,6 +651,9 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
       const drugName = brandNames[0]
         ? `${brandNames[0]}${genericNames[0] ? ` (${genericNames[0].toLowerCase()})` : ''}`
         : genericNames[0]
+      const appNumberRaw = result?.openfda?.application_number?.[0] || null
+      const appMatch = appNumberRaw?.match(/(NDA|BLA)\s*[-#:]?\s*(\d+)/i)
+      const source = appMatch ? `FDA ${appMatch[1].toUpperCase()} ${appMatch[2]}` : 'FDA Drug Label (OpenFDA)'
       const key = drugName.toLowerCase()
       if (seen.has(key)) continue
       seen.add(key)
@@ -663,7 +666,7 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
         evidence_level: 'FDA_approved',
         line: null,
         caveat: `FDA drug label references ${gene} mutation in indications. Confirm clinical applicability with your physician.`,
-        source: 'FDA Drug Label (OpenFDA)',
+        source,
       })
     }
     return drugs

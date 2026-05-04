@@ -84,27 +84,35 @@ All APIs are free and require no account or key.
 
 ```
 GermlineRx/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml                 # Auto-deploy to GitHub Pages on push to main
 ├── germline_webapp/
 │   ├── backend/
 │   │   ├── app/
+│   │   │   ├── api/routes.py          # POST /api/analyze, /normalize, /upload, GET /health
 │   │   │   ├── engine/
 │   │   │   │   ├── normalizer.py      # Free-text variant → canonical gene + HGVS
 │   │   │   │   ├── tier0.py           # ClinVar + gnomAD interpretation
 │   │   │   │   ├── tier1.py           # FDA-approved therapy KB
 │   │   │   │   ├── tier2.py           # ClinicalTrials.gov matching
 │   │   │   │   └── tier3.py           # Emerging pipeline KB
-│   │   │   ├── enrichment/
-│   │   │   │   └── datalake.py        # Biomni datalake reader
-│   │   │   └── api/routes.py          # POST /api/analyze, /normalize, /upload
+│   │   │   ├── enrichment/datalake.py # Biomni datalake reader
+│   │   │   ├── models/schemas.py      # API request/response schemas
+│   │   │   └── parsers/               # PDF/VCF parsers
 │   │   └── requirements.txt
 │   └── frontend/
-│       └── src/
-│           ├── App.tsx
-│           ├── components/            # Input forms, results panels, trial cards
-│           └── static-mode/           # Browser-only engine (GitHub Pages)
-├── api/
-│   └── gnomad.js                     # Vercel serverless function — gnomAD proxy (avoids CORS)
-└── .github/workflows/deploy.yml      # Auto-deploy to GitHub Pages on push
+│       ├── src/
+│       │   ├── App.tsx
+│       │   ├── components/            # Input + results UI
+│       │   └── static-mode/           # Browser-only analysis engine
+│       ├── api/
+│       │   ├── gnomad.js              # Vercel serverless gnomAD proxy
+│       │   └── proxy.js               # CORS fallback proxy
+│       ├── vite.config.ts
+│       └── vercel.json
+├── README.md
+└── LICENSE
 ```
 
 ---

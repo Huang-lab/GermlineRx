@@ -28,7 +28,7 @@ function getFDAUrl(drugName: string, source: string | null | undefined): string 
     return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=${appMatch[1]}`
   }
   const term = getDrugSearchTerm(drugName)
-  return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(term)}`
+  return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&searchTerm=${encodeURIComponent(term)}`
 }
 
 // Returns false for medical procedures/devices that have no drug package label
