@@ -3,7 +3,7 @@ import type { DrugEntry, SurveillanceEntry } from '../types'
 interface KBEntry {
   gene: string
   match_functional_classes: string[] | null
-  action_type: 'drug' | 'surveillance'
+  action_type: 'drug' | 'surveillance' | 'surgery'
   drug_name: string | null
   action: string
   fda_approved: boolean | null
@@ -481,6 +481,19 @@ const THERAPY_KB: KBEntry[] =
     "source": "FDA NDA 213246"
   },
   {
+    "gene": "RET",
+    "match_functional_classes": ["ret_men2a", "ret_men2b"],
+    "action_type": "surgery",
+    "drug_name": null,
+    "action": "Prophylactic thyroidectomy — timing based on RET codon risk category. MEN2B (M918T): within first 6 months of life. MEN2A high-risk (C634): by age 5.",
+    "fda_approved": null,
+    "approval_year": null,
+    "evidence_level": "ATA_guideline",
+    "line": null,
+    "caveat": "Risk stratification by specific codon determines urgency.",
+    "source": "ATA Guidelines for Medullary Thyroid Cancer 2015"
+  },
+  {
     "gene": "MSH2",
     "match_functional_classes": null,
     "action_type": "drug",
@@ -845,6 +858,19 @@ const THERAPY_KB: KBEntry[] =
     "source": "FDA NDA 020998 (FAP indication)"
   },
   {
+    "gene": "APC",
+    "match_functional_classes": null,
+    "action_type": "surgery",
+    "drug_name": null,
+    "action": "Prophylactic colectomy — recommended by age 20-25 or when polyps become unmanageable. Options: total proctocolectomy with IPAA or subtotal colectomy with IRA.",
+    "fda_approved": null,
+    "approval_year": null,
+    "evidence_level": "NCCN_guideline",
+    "line": null,
+    "caveat": "Timing depends on polyp burden, genotype, and patient preference.",
+    "source": "NCCN Guidelines Genetic/Familial High-Risk Assessment v2.2024"
+  },
+  {
     "gene": "VHL",
     "match_functional_classes": null,
     "action_type": "surveillance",
@@ -869,6 +895,19 @@ const THERAPY_KB: KBEntry[] =
     "line": "1st-line (aortic dilation)",
     "caveat": "Off-label use but strongly recommended by guidelines. Reduces TGF-β signaling (losartan). Target HR <100 bpm (atenolol).",
     "source": "2010 ACCF/AHA Thoracic Aortic Disease Guidelines"
+  },
+  {
+    "gene": "FBN1",
+    "match_functional_classes": null,
+    "action_type": "surgery",
+    "drug_name": null,
+    "action": "Prophylactic aortic root surgery when aortic root diameter reaches 4.5-5.0cm (or 4.0cm with family history of dissection). Valve-sparing root replacement preferred.",
+    "fda_approved": null,
+    "approval_year": null,
+    "evidence_level": "ACCF_AHA_guideline",
+    "line": null,
+    "caveat": "Threshold lower for women, rapid growth (>0.5cm/year), or family history of dissection.",
+    "source": "2022 ACC/AHA Aortic Disease Guidelines"
   },
   {
     "gene": "PKD1",
@@ -1064,6 +1103,19 @@ const THERAPY_KB: KBEntry[] =
     "line": null,
     "caveat": "Very high lifetime cancer risk (breast 45%, colorectal 39%, pancreatic 11-36%).",
     "source": "NCCN Guidelines Genetic/Familial High-Risk Assessment v2.2024"
+  },
+  {
+    "gene": "CDH1",
+    "match_functional_classes": null,
+    "action_type": "surgery",
+    "drug_name": null,
+    "action": "Prophylactic total gastrectomy recommended by age 20-30 for pathogenic CDH1 variants. Diffuse gastric cancer risk >70% by age 80.",
+    "fda_approved": null,
+    "approval_year": null,
+    "evidence_level": "IGCLC_guideline",
+    "line": null,
+    "caveat": "Endoscopic surveillance is insufficient — diffuse-type tumors are endoscopically occult. PTG is life-saving.",
+    "source": "IGCLC CDH1 Guidelines 2020; NCCN v2.2024"
   },
   {
     "gene": "CDH1",
@@ -1357,7 +1409,7 @@ export function lookupVariantDrugKB(gene: string, functionalClass: string | null
 export function lookupSurveillanceKB(gene: string): SurveillanceEntry[] {
   const geneUpper = gene.toUpperCase()
   return THERAPY_KB
-    .filter(e => e.gene.toUpperCase() === geneUpper && e.action_type === 'surveillance')
+    .filter(e => e.gene.toUpperCase() === geneUpper && (e.action_type === 'surveillance' || e.action_type === 'surgery'))
     .map(e => ({
       recommendation: e.action,
       action_type: e.action_type,

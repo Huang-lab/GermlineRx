@@ -24,7 +24,6 @@ export default function TrialCard({ trial, gene }: Props) {
   const style = ELIGIBILITY_STYLES[trial.eligibility_overall] || ELIGIBILITY_STYLES.CHECK_WITH_DOCTOR
 
   const isPositive = trial.eligibility_overall === 'ELIGIBLE' || trial.eligibility_overall === 'LIKELY_ELIGIBLE'
-  const isCaution = trial.eligibility_overall === 'CHECK_WITH_DOCTOR'
 
   // Only show critical issues inline (NOT_MET or WARNING, non-exclusion)
   const criticalChecks = trial.criterion_checks.filter(
@@ -93,8 +92,8 @@ export default function TrialCard({ trial, gene }: Props) {
         </div>
       )}
 
-      {/* Row 6 — Exclusion flags (only for caution/ineligible) */}
-      {isCaution && exclusionChecks.length > 0 && (
+      {/* Row 6 — Exclusion flags */}
+      {exclusionChecks.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
           {exclusionChecks.map((c, i) => (
             <span key={i} className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">

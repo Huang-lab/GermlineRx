@@ -40,17 +40,12 @@ const CLS_KEYWORDS: Record<string, string> = {
 async function extractPdfText(file: File): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist')
 
-  // Use the worker from the bundled asset
-  const workerUrl = new URL(
-    'pdfjs-dist/build/pdf.worker.mjs',
-    import.meta.url,
-  ).toString()
-
-  // Fallback: if worker fails, use fake worker (runs on main thread, slower but works)
   try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.mjs',
+      import.meta.url,
+    ).toString()
   } catch {
-    // If the URL-based worker doesn't work, disable worker entirely
     pdfjsLib.GlobalWorkerOptions.workerSrc = ''
   }
 
