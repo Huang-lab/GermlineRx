@@ -61,11 +61,6 @@ export default function TrialCard({ trial, gene }: Props) {
         {trial.title.length > 100 ? trial.title.slice(0, 100) + '…' : trial.title}
       </h4>
 
-      {/* Row 3 — Plain-language summary */}
-      {trial.eligibility_plain && (
-        <p className="text-xs text-gray-600 mb-3 leading-relaxed">{trial.eligibility_plain}</p>
-      )}
-
       {/* Row 4 — Top interventions (capped at 3) */}
       {visibleIV.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
@@ -80,15 +75,18 @@ export default function TrialCard({ trial, gene }: Props) {
         </div>
       )}
 
-      {/* Row 5 — Critical inline warnings (NOT_MET / WARNING only) */}
+      {/* Row 5 — Critical inline warnings (cap at 2, rest in details) */}
       {criticalChecks.length > 0 && (
         <div className="mb-3 space-y-1">
-          {criticalChecks.map((c, i) => (
+          {criticalChecks.slice(0, 2).map((c, i) => (
             <div key={i} className="flex items-center gap-1.5 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">
               <span className="font-bold">✗</span>
-              <span><span className="font-medium">{c.criterion}:</span> {c.explanation}</span>
+              <span className="font-medium">{c.criterion}</span>
             </div>
           ))}
+          {criticalChecks.length > 2 && (
+            <div className="text-xs text-red-600">+{criticalChecks.length - 2} more issues — see details below</div>
+          )}
         </div>
       )}
 
