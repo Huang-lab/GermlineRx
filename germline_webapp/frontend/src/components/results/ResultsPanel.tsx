@@ -85,31 +85,33 @@ function ClinVarBadge({ classification, clinvarId }: { classification: string; c
 function GnomADBadge({ af, url }: { af: number | null; url?: string | null }) {
   let label: string
   let cls: string
-  if (af === null) {
-    label = 'AF: Not in gnomAD'; cls = 'bg-gray-100 border-gray-300 text-gray-500'
+  if (af === null || af === undefined) {
+    label = 'Not in gnomAD'; cls = 'bg-gray-100 border-gray-300 text-gray-500'
   } else if (af > 0.01) {
-    label = `AF: ${af.toFixed(4)} — Common`; cls = 'bg-green-100 border-green-300 text-green-700'
+    label = `AF ${af.toFixed(4)} — Common`; cls = 'bg-green-100 border-green-300 text-green-700'
   } else if (af > 0.001) {
-    label = `AF: ${af.toFixed(5)} — Rare`; cls = 'bg-blue-100 border-blue-300 text-blue-700'
+    label = `AF ${af.toFixed(5)} — Rare`; cls = 'bg-blue-100 border-blue-300 text-blue-700'
   } else if (af > 0.0001) {
-    label = `AF: ${af.toFixed(6)} — Very Rare`; cls = 'bg-orange-100 border-orange-300 text-orange-700'
+    label = `AF ${af.toFixed(6)} — Very Rare`; cls = 'bg-orange-100 border-orange-300 text-orange-700'
   } else {
-    label = `AF: ${af.toExponential(2)} — Ultra-Rare`; cls = 'bg-red-100 border-red-300 text-red-700'
+    label = `AF ${af.toExponential(2)} — Ultra-Rare`; cls = 'bg-red-100 border-red-300 text-red-700'
   }
-  const badge = (
+  const inner = (
     <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${cls}`}>
-      <span>gnomAD {label}</span>
+      gnomAD {label}
     </span>
   )
   if (url) {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer"
-         className="hover:opacity-80 transition-opacity" title="View on gnomAD">
-        {badge} <span className="text-xs text-brand-500">↗</span>
+         className="inline-flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+         title="View variant on gnomAD">
+        {inner}
+        <span className="text-xs font-semibold text-blue-600 underline underline-offset-2">gnomAD ↗</span>
       </a>
     )
   }
-  return badge
+  return inner
 }
 
 function ActionPlanCard({ plan, gene }: { plan: ActionPlan; gene: string }) {

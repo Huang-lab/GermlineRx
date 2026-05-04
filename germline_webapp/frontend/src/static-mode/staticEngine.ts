@@ -696,11 +696,11 @@ async function fetchTier1(gene: string, functionalClass: string | null): Promise
   const diseaseKeywords = SEARCH_TERMS[gene.toUpperCase()] || [`${gene} disease`]
   const fdaDrugs = await fetchFDADrugLabels(gene, diseaseKeywords)
 
-  // Prefer live FDA label data when available; merge curated variant-level FDA entries
-  // so known high-confidence examples remain visible when OpenFDA is sparse.
+  // Curated KB entries come first — manually vetted with NDA/BLA numbers and exact
+  // variant/gene matching. OpenFDA results appended after as supplementary coverage.
   const merged: DrugEntry[] = []
   const seen = new Set<string>()
-  for (const drug of [...fdaDrugs, ...kbDrugs]) {
+  for (const drug of [...kbDrugs, ...fdaDrugs]) {
     const key = drug.drug_name.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
@@ -1020,11 +1020,17 @@ async function fetchTier2(gene: string, hgvs: string, disease: string, age: numb
     }
 
     // Step 2 — gene-level search using curated disease terms
-    const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
+    const terms = [...(SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`])]
     const diseaseTerm = disease.trim().replace(/[()]/g, ' ').replace(/\s+/g, ' ')
-    if (diseaseTerm.length >= 4) {
+    // Don't restrict trials by disease term for healthy carriers / screening context.
+    const HEALTHY_WORDS = ['healthy', 'carrier', 'screening', 'preventive', 'prevention', 'unaffected', 'germline testing', 'normal']
+    const isHealthyContext = !diseaseTerm || HEALTHY_WORDS.some(w => diseaseTerm.toLowerCase().includes(w))
+    if (diseaseTerm.length >= 4 && !isHealthyContext) {
       terms.push(`${geneUpper} ${diseaseTerm}`)
       terms.push(diseaseTerm)
+    }
+    if (isHealthyContext && SEARCH_TERMS[geneUpper]) {
+      terms.push(`${geneUpper} carrier`, `${geneUpper} prevention`, `${geneUpper} risk reduction`)
     }
     const uniqueTerms = Array.from(new Set(terms))
     const fetches = uniqueTerms.map(term => fetchCTStudies(term, 'RECRUITING', 15).catch(() => [] as RawStudy[]))

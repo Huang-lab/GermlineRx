@@ -1,3 +1,4 @@
+import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import type { UploadResponse, ExtractedVariant } from '../types'
 
 const KNOWN_GENES = [
@@ -39,15 +40,7 @@ const CLS_KEYWORDS: Record<string, string> = {
 
 async function extractPdfText(file: File): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist')
-
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.mjs',
-      import.meta.url,
-    ).toString()
-  } catch {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
