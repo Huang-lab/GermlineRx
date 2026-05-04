@@ -4,11 +4,9 @@
  * Runs entirely in the browser with no backend server.
  * All data comes from live API calls — no bundled JSON files required.
  *
- * - Tier 0: ClinVar (NCBI) + gnomAD variant-level GraphQL
- * - Tier 1: DGIdb GraphQL (gene → drug interactions)
- * - Tier 2: ClinicalTrials.gov v2 API (recruiting trials)
- * - Tier 3: ClinicalTrials.gov v2 API (Phase 1/2, not yet recruiting)
- * - Enrichment: not available (requires server-side datalake files)
+ * - Tier 0: ClinVar (NCBI) + gnomAD variant-level AF (MyVariant-first)
+ * - Tier 1: FDA-approved therapies from OpenFDA (+ curated FDA fallback)
+ * - Tier 2: Recruiting clinical trials from ClinicalTrials.gov v2 (top 10)
  */
 
 import { GENE_TO_ENSEMBL } from './geneToEnsembl'
@@ -39,10 +37,8 @@ import type {
   Tier0Result,
   Tier1Result,
   Tier2Result,
-  Tier3Result,
   DrugEntry,
   TrialResult,
-  PipelineEntry,
   ActionPlan,
   ActionBullet,
 } from '../types'
@@ -659,23 +655,29 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
 }
 
 async function fetchTier1(gene: string, functionalClass: string | null): Promise<Tier1Result> {
-  const kbDrugs = lookupVariantDrugKB(gene, functionalClass)
+  const kbDrugs = lookupVariantDrugKB(gene, functionalClass).filter(d => d.fda_approved)
   const kbSurveillance = lookupSurveillanceKB(gene)
-  const geneInKb = hasGeneInVariantDrugKB(gene)
+  const fdaDrugs = await fetchFDADrugLabels(gene)
 
-  if (kbDrugs.length > 0) {
-    return { drugs: kbDrugs, surveillance: kbSurveillance }
+  // Prefer live FDA label data when available; merge curated variant-level FDA entries
+  // so known high-confidence examples remain visible when OpenFDA is sparse.
+  const merged: DrugEntry[] = []
+  const seen = new Set<string>()
+  for (const drug of [...fdaDrugs, ...kbDrugs]) {
+    const key = drug.drug_name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(drug)
+  }
+  if (merged.length > 0) {
+    return { drugs: merged, surveillance: kbSurveillance }
   }
 
-  // If gene is curated in KB but has no variant-class-matched drug, do not
-  // return noisy fallback matches from broad target-level APIs.
-  if (geneInKb) {
+  // No FDA-labeled or curated FDA therapy found.
+  if (hasGeneInVariantDrugKB(gene)) {
     return { drugs: [], surveillance: kbSurveillance }
   }
-
-  // Gene not in curated KB — try FDA drug label search as last resort.
-  const fdaDrugs = await fetchFDADrugLabels(gene)
-  return { drugs: fdaDrugs, surveillance: kbSurveillance }
+  return { drugs: [], surveillance: kbSurveillance }
 }
 
 // ─── Gene-specific search terms (shared by Tier 2 and Tier 3) ────────────────
@@ -999,7 +1001,7 @@ async function fetchTier2(gene: string, hgvs: string, disease: string, age: numb
     const eligibleTrials = allTrials.filter(t => t.eligibility_overall !== 'INELIGIBLE')
     const ineligibleCount = allTrials.length - eligibleTrials.length
 
-    const TRIAL_CAP = 5
+    const TRIAL_CAP = 10
     const seeMoreUrl = eligibleTrials.length > TRIAL_CAP
       ? `https://clinicaltrials.gov/search?term=${encodeURIComponent(gene)}&status=RECRUITING&studyType=INTERVENTIONAL`
       : undefined
@@ -1017,85 +1019,11 @@ async function fetchTier2(gene: string, hgvs: string, disease: string, age: numb
   }
 }
 
-// ─── Tier 3: ClinicalTrials.gov — Phase 1/2 non-recruiting trials ─────────────
-
-async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3Result> {
-  try {
-    const geneUpper = gene.toUpperCase()
-    const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
-
-    const allStudies: RawStudy[] = []
-    const seenNct = new Set<string>()
-
-    const fetches = terms.map(async (term) => {
-      const query = encodeURIComponent(term)
-      const url = [
-        'https://clinicaltrials.gov/api/v2/studies',
-        `?query.term=${query}`,
-        `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
-        `&filter.studyType=INTERVENTIONAL`,
-        `&pageSize=20&format=json`,
-      ].join('')
-      const res = await fetch(url)
-      const json = await res.json()
-      return (json?.studies || []) as RawStudy[]
-    })
-
-    const results = await Promise.allSettled(fetches)
-    for (const r of results) {
-      if (r.status !== 'fulfilled') continue
-      for (const study of r.value) {
-        const nctId = study.protocolSection?.identificationModule?.nctId
-        if (nctId && !seenNct.has(nctId)) {
-          seenNct.add(nctId)
-          allStudies.push(study)
-        }
-      }
-    }
-
-    const studies = allStudies
-    const relevant = filterRelevantStudies(studies, gene)
-
-    const EARLY_PHASES = new Set(['PHASE1', 'PHASE2', 'EARLY_PHASE1', 'NA'])
-    const pipeline: PipelineEntry[] = relevant
-      .filter(s => {
-        const nctId = s.protocolSection?.identificationModule?.nctId || ''
-        if (tier2NctIds.has(nctId)) return false
-        const phases: string[] = s.protocolSection?.designModule?.phases || []
-        return phases.length === 0 || phases.some((ph: string) => EARLY_PHASES.has(ph))
-      })
-      .map(s => {
-        const p = s.protocolSection || {}
-        const id = p.identificationModule || {}
-        const phases = (p.designModule?.phases || []).join('/')
-        const interventions = (p.armsInterventionsModule?.interventions || []).map((i: { name?: string }) => i.name || '').filter(Boolean)
-        const sponsor = p.sponsorCollaboratorsModule?.leadSponsor?.name || 'Unknown sponsor'
-        const nctId = id.nctId || ''
-
-        return {
-          gene: geneUpper,
-          approach: interventions.length > 0 ? interventions[0] : 'Investigational therapy',
-          description: id.briefTitle || 'See ClinicalTrials.gov for details',
-          stage: phases || 'Phase 1/2',
-          target: null,
-          key_programs: [sponsor, ...(nctId ? [`NCT: ${nctId}`] : [])],
-          caveat: `ClinicalTrials.gov ${nctId} — not yet recruiting or actively enrolling, not open for new patients`,
-          n_of_1_flag: false,
-        }
-      })
-
-    return { pipeline: pipeline.slice(0, 5) }
-  } catch {
-    return { pipeline: [] }
-  }
-}
-
 // ─── Overall status ───────────────────────────────────────────────────────────
 
-function deriveOverallStatus(tier1: Tier1Result, tier2: Tier2Result, tier3: Tier3Result): AnalyzeResponse['overall_status'] {
+function deriveOverallStatus(tier1: Tier1Result, tier2: Tier2Result): AnalyzeResponse['overall_status'] {
   if (tier1.drugs.some(d => d.fda_approved)) return 'FULLY_ACTIONABLE'
   if (tier1.drugs.length > 0 || tier2.trials.length > 0) return 'PARTIALLY_ACTIONABLE'
-  if (tier3.pipeline.length > 0) return 'INVESTIGATIONAL_ONLY'
   return 'NOT_ACTIONABLE'
 }
 
@@ -1132,9 +1060,7 @@ function buildActionPlan(
   gene: string,
   tier1: Tier1Result,
   tier2: Tier2Result,
-  tier3: Tier3Result,
 ): ActionPlan {
-  void tier3 // reserved for future red-status nuance
   const fdaDrug = tier1.drugs.find(d => d.fda_approved)
   const bestTrial = tier2.trials[0]
   const specialist = GENE_SPECIALIST[gene.toUpperCase()] || 'genetic counselor'
@@ -1303,8 +1229,6 @@ export async function staticAnalyze(
       tier0: { classification: 'Unknown significance', confidence: 'LOW', review_stars: 0, review_status: 'No data', gnomad_af: null, gnomad_interpretation: 'Allele frequency not available', gnomad_url: null, clinvar_id: null, clingen_note: null },
       tier1: { drugs: [], surveillance: [] },
       tier2: { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0, total_eligible: 0 },
-      tier3: { pipeline: [] },
-      enrichment: undefined,
       action_plan: {
         status: 'red',
         bullets: [
@@ -1325,19 +1249,14 @@ export async function staticAnalyze(
     fetchTier2(gene, hgvs, disease, age, sex),
   ])
 
-  const tier2NctIds = new Set(tier2.trials.map(t => t.nct_id))
-  const tier3 = await fetchTier3(gene, tier2NctIds)
-
-  const overallStatus = deriveOverallStatus(tier1, tier2, tier3)
-  const action_plan = buildActionPlan(gene, tier1, tier2, tier3)
+  const overallStatus = deriveOverallStatus(tier1, tier2)
+  const action_plan = buildActionPlan(gene, tier1, tier2)
 
   const fdaDrugs = tier1.drugs.filter(d => d.fda_approved).map(d => d.drug_name)
   const patientSummary = fdaDrugs.length > 0
     ? `Your ${gene} variant has ${fdaDrugs.length} FDA-approved treatment option${fdaDrugs.length > 1 ? 's' : ''}: ${fdaDrugs.slice(0, 3).join(', ')}${fdaDrugs.length > 3 ? ', and more' : ''}. Always consult your physician before making any medical decisions.`
     : tier2.trials.length > 0
     ? `No FDA-approved therapies are currently matched to your ${gene} variant, but ${tier2.trials.length} recruiting clinical trial${tier2.trials.length > 1 ? 's' : ''} related to ${gene} may be relevant. Discuss these options with your physician or genetic counselor.`
-    : tier3.pipeline.length > 0
-    ? `No FDA-approved therapies are currently matched to your ${gene} variant. ${tier3.pipeline.length} emerging research program${tier3.pipeline.length > 1 ? 's are' : ' is'} in development. Speak with a specialist about future options.`
     : `No FDA-approved therapies or matched trials were found for your ${gene} variant at this time. Consider consulting a genetic counselor for personalized guidance.`
 
   return {
@@ -1350,8 +1269,6 @@ export async function staticAnalyze(
     tier0,
     tier1,
     tier2,
-    tier3,
-    enrichment: undefined,
     action_plan,
     patient_summary: patientSummary,
     patient_next_steps: [
@@ -1359,9 +1276,9 @@ export async function staticAnalyze(
       'Do not start or stop any medication based solely on this report.',
     ],
     clinician_notes: [
-      `Static mode — all data from live APIs (ClinVar, gnomAD, DGIdb, ClinicalTrials.gov).`,
-      `Tier 1 from DGIdb — may have less clinical detail than the full HuggingFace version.`,
-      `Enrichment data (OMIM, DDInter, Orphan drugs) not available in static mode.`,
+      `Static mode — live APIs only (ClinVar, gnomAD, OpenFDA, ClinicalTrials.gov).`,
+      `Tier 1 prioritizes FDA drug labels from OpenFDA, then curated FDA-matched variant entries.`,
+      `Top 10 recruiting interventional trials are shown after eligibility pre-screening and ranking.`,
     ],
   }
 }

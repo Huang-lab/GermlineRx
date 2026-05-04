@@ -2,11 +2,8 @@ import { useState } from 'react'
 import ManualEntry from './components/input/ManualEntry'
 import FileUpload from './components/input/FileUpload'
 import ResultsPanel from './components/results/ResultsPanel'
-import { analyzeVariant } from './utils/api'
 import { staticAnalyze } from './static-mode/staticEngine'
 import type { AnalyzeResponse } from './types'
-
-const STATIC_MODE = import.meta.env.VITE_STATIC_MODE === 'true'
 
 type Tab = 'manual' | 'upload'
 
@@ -55,9 +52,7 @@ export default function App() {
   ) => {
     setLoading(true); setError(null); setResults(null)
     try {
-      const data = STATIC_MODE
-        ? await staticAnalyze(gene, hgvs, disease, age, fc, sex)
-        : await analyzeVariant(gene, hgvs, disease, age, fc)
+      const data = await staticAnalyze(gene, hgvs, disease, age, fc, sex)
       setResults(data)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -102,24 +97,6 @@ export default function App() {
                 {results.gene} {results.hgvs}
               </span>
             )}
-            {!STATIC_MODE && (
-              <a
-                href="http://localhost:8000/docs"
-                target="_blank" rel="noopener noreferrer"
-                className="text-xs text-brand-600 hover:underline"
-              >
-                API Docs
-              </a>
-            )}
-            {STATIC_MODE && (
-              <a
-                href="https://huggingface.co/spaces/Rita9CoreX/germline-rx"
-                target="_blank" rel="noopener noreferrer"
-                className="text-xs text-brand-600 hover:underline"
-              >
-                Full version ↗
-              </a>
-            )}
           </div>
         </div>
       </header>
@@ -134,7 +111,7 @@ export default function App() {
               </h2>
               <p className="text-sm text-gray-500 leading-relaxed">
                 Enter your genetic variant to instantly see FDA-approved therapies,
-                recruiting clinical trials you may qualify for, and emerging research programs.
+                and recruiting clinical trials you may qualify for.
               </p>
             </div>
 
@@ -152,30 +129,16 @@ export default function App() {
                 >
                   ✏️ Enter Mutation
                 </button>
-                {!STATIC_MODE && (
-                  <button
-                    className={`flex-1 py-3 text-sm font-medium transition ${
-                      tab === 'upload'
-                        ? 'text-brand-600 border-b-2 border-brand-600 bg-white'
-                        : 'text-gray-500 hover:text-gray-700 bg-gray-50'
-                    }`}
-                    onClick={() => setTab('upload')}
-                  >
-                    📄 Upload Report
-                  </button>
-                )}
-                {STATIC_MODE && (
-                  <button
-                    className={`flex-1 py-3 text-sm font-medium transition ${
-                      tab === 'upload'
-                        ? 'text-brand-600 border-b-2 border-brand-600 bg-white'
-                        : 'text-gray-500 hover:text-gray-700 bg-gray-50'
-                    }`}
-                    onClick={() => setTab('upload')}
-                  >
-                    📄 Upload Report
-                  </button>
-                )}
+                <button
+                  className={`flex-1 py-3 text-sm font-medium transition ${
+                    tab === 'upload'
+                      ? 'text-brand-600 border-b-2 border-brand-600 bg-white'
+                      : 'text-gray-500 hover:text-gray-700 bg-gray-50'
+                  }`}
+                  onClick={() => setTab('upload')}
+                >
+                  📄 Upload Report
+                </button>
               </div>
 
               <div className="p-6">
@@ -195,7 +158,7 @@ export default function App() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                   </svg>
-                  Running 4-tier analysis (ClinVar · gnomAD · ClinicalTrials.gov)...
+                  Running analysis (ClinVar · gnomAD · OpenFDA · ClinicalTrials.gov)...
                 </div>
               </div>
             )}
@@ -237,8 +200,7 @@ export default function App() {
             <div className="mb-4 text-sm text-gray-500 bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between gap-4">
               <p>
                 <span className="font-medium text-gray-700">GermlineRx</span> matched your variant against FDA-approved therapies,
-                recruiting clinical trials, and emerging research programs.
-                {!STATIC_MODE && ' Enrichment data from Biomni biomedical databases.'}
+                and recruiting clinical trials.
               </p>
               <button
                 onClick={() => setResults(null)}
