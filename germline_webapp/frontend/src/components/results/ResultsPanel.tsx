@@ -12,14 +12,23 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
 
 interface Props { data: AnalyzeResponse; onReset: () => void }
 
-// Extracts the best single brand name for search (avoids slash/plus compounds, annotation parens)
+// Extracts the best single brand name for DailyMed search
 function getDrugSearchTerm(drugName: string): string {
   const brandMatch = drugName.match(/\(([^)]+)\)/)
   if (brandMatch?.[1]) {
-    // Split on / or + to get only the first brand when multiple are listed
     return brandMatch[1].split(/[\/+]/)[0].trim()
   }
   return drugName.split('(')[0].trim().split(/[\/+]/)[0].trim()
+}
+
+// Returns a direct FDA Drugs@FDA URL using NDA/BLA number if available, else brand name search
+function getFDAUrl(drugName: string, source: string | null | undefined): string {
+  const appMatch = source?.match(/(?:NDA|BLA)\s*(\d+)/i)
+  if (appMatch) {
+    return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=${appMatch[1]}`
+  }
+  const term = getDrugSearchTerm(drugName)
+  return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(term)}`
 }
 
 // Returns false for medical procedures/devices that have no drug package label
@@ -279,14 +288,14 @@ export default function ResultsPanel({ data, onReset }: Props) {
         ) : (
           <div className="space-y-3">
             {data.tier1.drugs.map((drug, i) => {
-              const drugSearchTerm = getDrugSearchTerm(drug.drug_name)
               const linkable = drug.fda_approved && isDrugLinkable(drug.drug_name)
+              const fdaUrl = getFDAUrl(drug.drug_name, drug.source)
               return (
               <div key={i} className="border border-gray-200 rounded-lg p-3 bg-white">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   {linkable ? (
                     <a
-                      href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drugSearchTerm)}`}
+                      href={fdaUrl}
                       target="_blank" rel="noopener noreferrer"
                       className="text-sm font-bold text-brand-700 hover:underline"
                     >
@@ -318,11 +327,11 @@ export default function ResultsPanel({ data, onReset }: Props) {
                   Source: {drug.source || 'DGIdb'}{' '}
                   {linkable && (
                     <a
-                      href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(drugSearchTerm)}`}
+                      href={fdaUrl}
                       target="_blank" rel="noopener noreferrer"
                       className="text-brand-500 hover:underline ml-1"
                     >
-                      FDA search ↗
+                      FDA Drugs@FDA ↗
                     </a>
                   )}
                 </p>
