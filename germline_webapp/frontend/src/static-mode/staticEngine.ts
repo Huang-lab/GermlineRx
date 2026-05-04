@@ -940,7 +940,8 @@ function filterRelevantStudies(studies: RawStudy[], gene: string): RawStudy[] {
 async function fetchCTStudies(queryTerm: string, status: string, pageSize = 15): Promise<RawStudy[]> {
   const query = encodeURIComponent(queryTerm)
   const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=${status}&filter.studyType=INTERVENTIONAL&pageSize=${pageSize}&format=json`
-  const res = await fetch(url)
+  const res = await fetchWithCORSFallback(url)
+  if (!res.ok) return []
   const json = await res.json()
   return (json?.studies || []) as RawStudy[]
 }
