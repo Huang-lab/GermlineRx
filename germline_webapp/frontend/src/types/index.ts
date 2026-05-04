@@ -155,12 +155,10 @@ export interface AnalyzeResponse {
   hgvs: string
   display_mutation: string
   functional_class: string | null
-  overall_status: 'FULLY_ACTIONABLE' | 'PARTIALLY_ACTIONABLE' | 'INVESTIGATIONAL_ONLY' | 'NOT_ACTIONABLE'
+  overall_status: 'FULLY_ACTIONABLE' | 'PARTIALLY_ACTIONABLE' | 'NOT_ACTIONABLE'
   tier0: Tier0Result
   tier1: Tier1Result
   tier2: Tier2Result
-  tier3: Tier3Result
-  enrichment?: EnrichmentResult
   action_plan?: ActionPlan
   patient_summary: string
   patient_next_steps: string[]
@@ -173,6 +171,9 @@ export interface ExtractedVariant {
   confidence: string
   raw_text: string
   classification: string | null
+  clinvar_id?: string | null
+  zygosity?: string | null
+  inheritance?: string | null
 }
 
 export interface UploadResponse {

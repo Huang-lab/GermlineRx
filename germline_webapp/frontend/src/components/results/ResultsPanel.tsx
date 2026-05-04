@@ -28,7 +28,7 @@ function getFDAUrl(drugName: string, source: string | null | undefined): string 
     return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&ApplNo=${appMatch[1]}`
   }
   const term = getDrugSearchTerm(drugName)
-  return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(term)}`
+  return `https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&searchTerm=${encodeURIComponent(term)}`
 }
 
 // Returns false for medical procedures/devices that have no drug package label
@@ -85,31 +85,33 @@ function ClinVarBadge({ classification, clinvarId }: { classification: string; c
 function GnomADBadge({ af, url }: { af: number | null; url?: string | null }) {
   let label: string
   let cls: string
-  if (af === null) {
-    label = 'AF: Not in gnomAD'; cls = 'bg-gray-100 border-gray-300 text-gray-500'
+  if (af === null || af === undefined) {
+    label = 'Not in gnomAD'; cls = 'bg-gray-100 border-gray-300 text-gray-500'
   } else if (af > 0.01) {
-    label = `AF: ${af.toFixed(4)} — Common`; cls = 'bg-green-100 border-green-300 text-green-700'
+    label = `AF ${af.toFixed(4)} — Common`; cls = 'bg-green-100 border-green-300 text-green-700'
   } else if (af > 0.001) {
-    label = `AF: ${af.toFixed(5)} — Rare`; cls = 'bg-blue-100 border-blue-300 text-blue-700'
+    label = `AF ${af.toFixed(5)} — Rare`; cls = 'bg-blue-100 border-blue-300 text-blue-700'
   } else if (af > 0.0001) {
-    label = `AF: ${af.toFixed(6)} — Very Rare`; cls = 'bg-orange-100 border-orange-300 text-orange-700'
+    label = `AF ${af.toFixed(6)} — Very Rare`; cls = 'bg-orange-100 border-orange-300 text-orange-700'
   } else {
-    label = `AF: ${af.toExponential(2)} — Ultra-Rare`; cls = 'bg-red-100 border-red-300 text-red-700'
+    label = `AF ${af.toExponential(2)} — Ultra-Rare`; cls = 'bg-red-100 border-red-300 text-red-700'
   }
-  const badge = (
+  const inner = (
     <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${cls}`}>
-      <span>gnomAD {label}</span>
+      gnomAD {label}
     </span>
   )
   if (url) {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer"
-         className="hover:opacity-80 transition-opacity" title="View on gnomAD">
-        {badge} <span className="text-xs text-brand-500">↗</span>
+         className="inline-flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+         title="View variant on gnomAD">
+        {inner}
+        <span className="text-xs font-semibold text-blue-600 underline underline-offset-2">gnomAD ↗</span>
       </a>
     )
   }
-  return badge
+  return inner
 }
 
 function ActionPlanCard({ plan, gene }: { plan: ActionPlan; gene: string }) {
@@ -324,7 +326,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
                   </p>
                 )}
                 <p className="text-xs text-gray-400 mt-1">
-                  Source: {drug.source || 'DGIdb'}{' '}
+                  Source: {drug.source || 'OpenFDA'}{' '}
                   {linkable && (
                     <a
                       href={fdaUrl}
@@ -374,79 +376,15 @@ export default function ResultsPanel({ data, onReset }: Props) {
             {data.tier2.total_ineligible} additional trial{data.tier2.total_ineligible === 1 ? '' : 's'} not shown — age or sex outside eligibility range.
           </p>
         )}
-        {data.tier2.see_more_url && (data.tier2.total_eligible ?? 0) > 5 && (
+        {data.tier2.see_more_url && (data.tier2.total_eligible ?? 0) > 10 && (
           <div className="mt-3 text-center">
             <a href={data.tier2.see_more_url} target="_blank" rel="noopener noreferrer"
                className="text-xs text-brand-600 hover:underline">
-              See {(data.tier2.total_eligible ?? 0) - 5} more interventional trial{((data.tier2.total_eligible ?? 0) - 5) === 1 ? '' : 's'} on ClinicalTrials.gov ↗
+              See {(data.tier2.total_eligible ?? 0) - 10} more interventional trial{((data.tier2.total_eligible ?? 0) - 10) === 1 ? '' : 's'} on ClinicalTrials.gov ↗
             </a>
           </div>
         )}
       </TierSection>
-
-      {/* Tier 3 — hidden: too noisy, not clinically actionable for patients */}
-      {false && <TierSection title="Upcoming Trials & Research" icon="🔬" count={data.tier3.pipeline.length}>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs text-gray-400">Trials registered but not yet open to new patients</p>
-          <a
-            href={`https://clinicaltrials.gov/search?term=${encodeURIComponent(data.gene)}&status=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`}
-            target="_blank" rel="noopener noreferrer"
-            className="text-xs text-brand-600 hover:underline shrink-0 ml-2"
-          >
-            Search ClinicalTrials.gov ↗
-          </a>
-        </div>
-        {data.tier3.pipeline.length === 0 ? (
-          <p className="text-sm text-gray-500">No upcoming or early-stage trials found for this gene.</p>
-        ) : (
-          <div className="space-y-3">
-            {data.tier3.pipeline.map((prog, i) => (
-              <div key={i} className="border border-gray-200 rounded-lg p-3 bg-white">
-                <div className="flex items-start justify-between gap-2 flex-wrap mb-1">
-                  <h4 className="text-sm font-bold text-gray-800">{prog.approach}</h4>
-                  <span className="text-xs bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
-                    {prog.stage}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-600 leading-relaxed">{prog.description}</p>
-                {prog.key_programs.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {prog.key_programs.map((p, j) => {
-                      const nctMatch = p.match(/^NCT:\s*(NCT\d+)/)
-                      return nctMatch ? (
-                        <a key={j}
-                          href={`https://clinicaltrials.gov/study/${nctMatch[1]}`}
-                          target="_blank" rel="noopener noreferrer"
-                          className="text-xs bg-blue-50 text-brand-600 border border-blue-200 px-2 py-0.5 rounded hover:underline"
-                        >
-                          {p} ↗
-                        </a>
-                      ) : (
-                        <span key={j} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                          {p}
-                        </span>
-                      )
-                    })}
-                  </div>
-                )}
-                {prog.caveat && (
-                  <p className="text-xs text-yellow-700 bg-yellow-50 rounded px-2 py-1 mt-2">
-                    ⚠ {prog.caveat}
-                  </p>
-                )}
-                {prog.n_of_1_flag && (
-                  <p className="text-xs text-blue-700 bg-blue-50 rounded px-2 py-1 mt-2">
-                    N-of-1 / Expanded Access pathway may be relevant. Ask your specialist.
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </TierSection>}
-
-      {/* Enrichment — Biomni Datalake */}
-      {data.enrichment && <EnrichmentSection enrichment={data.enrichment} />}
 
       {/* Disclaimer */}
       <p className="text-xs text-gray-400 border-t pt-4 leading-relaxed">

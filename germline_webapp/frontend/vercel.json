@@ -5,6 +5,6 @@
     "VITE_STATIC_MODE": "true"
   },
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
   ]
 }
