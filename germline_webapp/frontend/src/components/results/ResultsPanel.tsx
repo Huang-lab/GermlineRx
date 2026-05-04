@@ -12,10 +12,21 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
 
 interface Props { data: AnalyzeResponse; onReset: () => void }
 
+// Extracts the best single brand name for search (avoids slash/plus compounds, annotation parens)
 function getDrugSearchTerm(drugName: string): string {
   const brandMatch = drugName.match(/\(([^)]+)\)/)
-  if (brandMatch?.[1]) return brandMatch[1].trim()
-  return drugName.split('(')[0].trim().split('/')[0].trim()
+  if (brandMatch?.[1]) {
+    // Split on / or + to get only the first brand when multiple are listed
+    return brandMatch[1].split(/[\/+]/)[0].trim()
+  }
+  return drugName.split('(')[0].trim().split(/[\/+]/)[0].trim()
+}
+
+// Returns false for medical procedures/devices that have no drug package label
+const NON_DRUG_TERMS = ['phlebotomy', 'icd', 'implantable cardioverter', 'beta-blocker', 'investigational']
+function isDrugLinkable(drugName: string): boolean {
+  const lower = drugName.toLowerCase()
+  return !NON_DRUG_TERMS.some(term => lower.includes(term))
 }
 
 export default function ResultsPanel({ data, onReset }: Props) {
@@ -152,16 +163,21 @@ export default function ResultsPanel({ data, onReset }: Props) {
           <div className="space-y-3">
             {data.tier1.drugs.map((drug, i) => {
               const drugSearchTerm = getDrugSearchTerm(drug.drug_name)
+              const linkable = drug.fda_approved && isDrugLinkable(drug.drug_name)
               return (
               <div key={i} className="border border-gray-200 rounded-lg p-3 bg-white">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <a
-                    href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drugSearchTerm)}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-sm font-bold text-brand-700 hover:underline"
-                  >
-                    {drug.drug_name} ↗
-                  </a>
+                  {linkable ? (
+                    <a
+                      href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drugSearchTerm)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-bold text-brand-700 hover:underline"
+                    >
+                      {drug.drug_name} ↗
+                    </a>
+                  ) : (
+                    <span className="text-sm font-bold text-brand-700">{drug.drug_name}</span>
+                  )}
                   <div className="flex gap-1.5 flex-wrap">
                     {drug.fda_approved && (
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
@@ -183,13 +199,15 @@ export default function ResultsPanel({ data, onReset }: Props) {
                 )}
                 <p className="text-xs text-gray-400 mt-1">
                   Source: {drug.source || 'DGIdb'}{' '}
-                  <a
-                    href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(drugSearchTerm)}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-brand-500 hover:underline ml-1"
-                  >
-                    FDA search ↗
-                  </a>
+                  {linkable && (
+                    <a
+                      href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(drugSearchTerm)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-brand-500 hover:underline ml-1"
+                    >
+                      FDA search ↗
+                    </a>
+                  )}
                 </p>
               </div>
               )
@@ -214,7 +232,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
       {/* Tier 2 — Clinical Trials */}
       <TierSection title="Recruiting Clinical Trials" icon="🏥"
         count={data.tier2.trials.length}
-        subtitle={`${data.tier2.total_fetched} fetched → ${data.tier2.total_after_scoring} scored → ${data.tier2.trials.length} shown`}
+        subtitle="Confirm eligibility with your care team"
       >
         {data.tier2.trials.length === 0 ? (
           <p className="text-sm text-gray-500">No matching recruiting trials found at this time.</p>
@@ -227,7 +245,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
         )}
         {(data.tier2.total_ineligible ?? 0) > 0 && (
           <p className="text-xs text-gray-400 mt-2">
-            {data.tier2.total_ineligible} trial{data.tier2.total_ineligible === 1 ? '' : 's'} excluded — age or sex outside eligibility range.
+            {data.tier2.total_ineligible} additional trial{data.tier2.total_ineligible === 1 ? '' : 's'} not shown — age or sex outside eligibility range.
           </p>
         )}
       </TierSection>
