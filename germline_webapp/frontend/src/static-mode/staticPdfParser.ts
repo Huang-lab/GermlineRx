@@ -50,14 +50,15 @@ const KNOWN_ALIASES: Record<string, { gene: string; hgvs: string }> = {
   '5382insC': { gene: 'BRCA1', hgvs: 'c.5266dup' },
 }
 
+// Longer/more-specific keywords must come first to avoid substring shadowing
 const CLS_KEYWORDS: Record<string, string> = {
-  'pathogenic': 'Pathogenic',
+  'variant of uncertain significance': 'VUS',
+  'uncertain significance': 'VUS',
   'likely pathogenic': 'Likely Pathogenic',
   'likely benign': 'Likely Benign',
+  'pathogenic': 'Pathogenic',
   'benign': 'Benign',
-  'variant of uncertain significance': 'VUS',
   'vus': 'VUS',
-  'uncertain significance': 'VUS',
 }
 
 async function extractPdfText(file: File): Promise<string> {
@@ -178,21 +179,41 @@ export async function parsePdf(file: File): Promise<UploadResponse> {
     })
   }
 
-  // 4. Fallback: any gene-like symbol near HGVS that wasn't caught above
+  // 4a. Clinical report table row: GENE, NM_transcript ... c.HGVS
+  // Catches any gene not already in KNOWN_GENES from structured report tables (PGxome, etc.)
+  const tableRowRegex = /\b([A-Z][A-Z0-9]{1,11})[\s,]+NM_\d+\.\d+.{1,200}?(c\.[0-9A-Za-z_>+\-*\[\]()]+)/gs
+  let tr: RegExpExecArray | null
+  while ((tr = tableRowRegex.exec(fullText)) !== null) {
+    const gene = tr[1]
+    const hgvs = tr[2]
+    const key = `${gene}:${hgvs}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    variants.push({
+      gene,
+      hgvs,
+      confidence: 'MODERATE',
+      raw_text: `${gene} ${hgvs}`,
+      classification: findClassificationNear(fullText, tr.index + tr[0].length - hgvs.length),
+    })
+  }
+
+  // 4b. Fallback: any gene-like symbol near HGVS that wasn't caught above
   const GENE_FALSE_POSITIVES = new Set([
     'THE','AND','FOR','NOT','THIS','WITH','FROM','THAT','HAVE','BEEN',
     'ALSO','ONLY','INTO','EACH','SUCH','THAN','PAGE','TEST','TYPE',
     'LAST','GENE','OMIM','MODE','HIGH','NEXT','BOTH','DATE','NAME',
     'MALE','INFO','YEAR','CLIA','NONE','BASED','EXON','STOP','PLUS',
+    'AD','AR','XL','XLD','XLR','DNA','RNA','PCR','NGS',
   ])
-  const hgvsHits = [...fullText.matchAll(/\b(c\.[0-9A-Za-z_>+\-*[\]()]+)/g)]
+  const hgvsHits = [...fullText.matchAll(/\b(c\.[0-9A-Za-z_>+\-*\[\]()]+)/g)]
   for (const hit of hgvsHits) {
-    const window = fullText.slice(Math.max(0, hit.index! - 200), hit.index!)
-    const geneCandidate = window.match(/\b([A-Z][A-Z0-9]{1,12})\b/g)
+    const win = fullText.slice(Math.max(0, hit.index! - 200), hit.index!)
+    const geneCandidate = win.match(/\b([A-Z][A-Z0-9]{1,12})\b/g)
     if (!geneCandidate) continue
-    const gene = geneCandidate[geneCandidate.length - 1]
-    if (GENE_FALSE_POSITIVES.has(gene)) continue
-    if (gene.length < 2) continue
+    // Take the last candidate with length >= 4 (filters AD/AR/XL/DNA)
+    const gene = [...geneCandidate].reverse().find(g => g.length >= 4 && !GENE_FALSE_POSITIVES.has(g))
+    if (!gene) continue
     const key = `${gene}:${hit[1]}`
     if (seen.has(key)) continue
     seen.add(key)
@@ -205,23 +226,25 @@ export async function parsePdf(file: File): Promise<UploadResponse> {
     })
   }
 
-  // Post-processing: extract clinvar_id, zygosity, inheritance
+  // Post-processing: extract clinvar_id, zygosity, inheritance using HGVS position
   for (const v of variants) {
-    const idx = fullText.indexOf(v.raw_text)
-    if (idx === -1) continue
-    const nearbyText = fullText.slice(Math.max(0, idx - 300), idx + 300)
-
-    const clinvarMatch = nearbyText.match(/\b(\d{5,7})\b/g)
+    const hgvsIdx = fullText.indexOf(v.hgvs)
+    if (hgvsIdx === -1) continue
+    // ClinVar ID appears AFTER the HGVS in report tables; OMIM appears before
+    const afterHgvs = fullText.slice(hgvsIdx, hgvsIdx + 250)
+    const clinvarMatch = afterHgvs.match(/\b(\d{5,7})\b/g)
     if (clinvarMatch) {
       for (const candidate of clinvarMatch) {
         const num = parseInt(candidate)
-        if (num >= 10000 && (num < 2000 || num > 2030)) {
+        // Exclude years (2000-2030) and very small numbers; take first valid hit
+        if (num >= 10000 && !(num >= 2000 && num <= 2030)) {
           v.clinvar_id = candidate
           break
         }
       }
     }
 
+    const nearbyText = fullText.slice(Math.max(0, hgvsIdx - 100), hgvsIdx + 200)
     const zygoMatch = nearbyText.match(/\b(heterozygous|homozygous|hemizygous)\b/i)
     if (zygoMatch) v.zygosity = zygoMatch[1].toLowerCase()
 
