@@ -12,6 +12,26 @@
  */
 
 import { GENE_TO_ENSEMBL } from './geneToEnsembl'
+import { hasGeneInVariantDrugKB, lookupVariantDrugKB, lookupSurveillanceKB } from './variantDrugKB'
+
+// ─── CORS-resilient fetch: tries direct, falls back to /api/proxy ─────────────
+async function fetchWithCORSFallback(url: string, options?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, options)
+  } catch {
+    // Direct fetch failed (likely CORS). Retry via the Vercel edge proxy.
+    return fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        method: options?.method || 'GET',
+        body: options?.body != null ? JSON.parse(options.body as string) : undefined,
+        headers: (options?.headers as Record<string, string>) || {},
+      }),
+    })
+  }
+}
 
 import type {
   NormalizeResponse,
@@ -23,6 +43,8 @@ import type {
   DrugEntry,
   TrialResult,
   PipelineEntry,
+  ActionPlan,
+  ActionBullet,
 } from '../types'
 
 // ─── Inline alias table (common patient-friendly names → canonical gene + HGVS) ─
@@ -585,11 +607,75 @@ async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
   }
 }
 
-async function fetchTier1(gene: string): Promise<Tier1Result> {
-  const otDrugs = await fetchTier1OpenTargets(gene)
-  if (otDrugs.length > 0) return { drugs: otDrugs, surveillance: [] }
-  const dgidbDrugs = await fetchTier1DGIdb(gene)
-  return { drugs: dgidbDrugs, surveillance: [] }
+// ─── FDA OpenFDA drug label search ──────────────────────────────────────────
+
+async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
+  try {
+    const q = encodeURIComponent(`"${gene} mutation"`)
+    const url = `https://api.fda.gov/drug/label.json?search=indications_and_usage:${q}&limit=5`
+    const res = await fetchWithCORSFallback(url, { signal: AbortSignal.timeout(8000) })
+    if (!res.ok) return []
+    const json = await res.json()
+    const results: Array<{
+      openfda?: { brand_name?: string[]; generic_name?: string[] }
+      indications_and_usage?: string[]
+    }> = json?.results || []
+
+    const seen = new Set<string>()
+    const drugs: DrugEntry[] = []
+
+    for (const result of results) {
+      const brandNames = result?.openfda?.brand_name || []
+      const genericNames = result?.openfda?.generic_name || []
+      const rawIndication = (result?.indications_and_usage || []).join(' ')
+      // Trim to a sentence or 300 chars, whichever comes first
+      const periodIdx = rawIndication.indexOf('.')
+      const action = rawIndication.slice(0, periodIdx > 30 ? periodIdx + 1 : 300).trim()
+
+      const rawName = brandNames[0] || genericNames[0] || ''
+      if (!rawName) continue
+      const drugName = brandNames[0]
+        ? `${brandNames[0]}${genericNames[0] ? ` (${genericNames[0].toLowerCase()})` : ''}`
+        : genericNames[0]
+      const key = drugName.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      drugs.push({
+        drug_name: titleCaseDrug(drugName),
+        action: action || `FDA-labeled therapy referencing ${gene} mutation`,
+        fda_approved: true,
+        approval_year: null,
+        evidence_level: 'FDA_approved',
+        line: null,
+        caveat: `FDA drug label references ${gene} mutation in indications. Confirm clinical applicability with your physician.`,
+        source: 'FDA Drug Label (OpenFDA)',
+      })
+    }
+    return drugs
+  } catch {
+    return []
+  }
+}
+
+async function fetchTier1(gene: string, functionalClass: string | null): Promise<Tier1Result> {
+  const kbDrugs = lookupVariantDrugKB(gene, functionalClass)
+  const kbSurveillance = lookupSurveillanceKB(gene)
+  const geneInKb = hasGeneInVariantDrugKB(gene)
+
+  if (kbDrugs.length > 0) {
+    return { drugs: kbDrugs, surveillance: kbSurveillance }
+  }
+
+  // If gene is curated in KB but has no variant-class-matched drug, do not
+  // return noisy fallback matches from broad target-level APIs.
+  if (geneInKb) {
+    return { drugs: [], surveillance: kbSurveillance }
+  }
+
+  // Gene not in curated KB — try FDA drug label search as last resort.
+  const fdaDrugs = await fetchFDADrugLabels(gene)
+  return { drugs: fdaDrugs, surveillance: kbSurveillance }
 }
 
 // ─── Gene-specific search terms (shared by Tier 2 and Tier 3) ────────────────
@@ -851,32 +937,57 @@ function filterRelevantStudies(studies: RawStudy[], gene: string): RawStudy[] {
   })
 }
 
-async function fetchTier2(gene: string, disease: string, age: number | null, sex?: string | null): Promise<Tier2Result> {
+async function fetchCTStudies(queryTerm: string, status: string, pageSize = 15): Promise<RawStudy[]> {
+  const query = encodeURIComponent(queryTerm)
+  const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=${status}&filter.studyType=INTERVENTIONAL&pageSize=${pageSize}&format=json`
+  const res = await fetch(url)
+  const json = await res.json()
+  return (json?.studies || []) as RawStudy[]
+}
+
+async function fetchTier2(gene: string, hgvs: string, disease: string, age: number | null, sex?: string | null): Promise<Tier2Result> {
   try {
     const geneUpper = gene.toUpperCase()
-    const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
 
     const allStudies: RawStudy[] = []
     const seenNct = new Set<string>()
 
-    const fetches = terms.map(async (term) => {
-      const query = encodeURIComponent(term)
-      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=15&format=json`
-      const res = await fetch(url)
-      const json = await res.json()
-      return (json?.studies || []) as RawStudy[]
-    })
+    const addStudies = (batch: RawStudy[]) => {
+      for (const study of batch) {
+        const nctId = study.protocolSection?.identificationModule?.nctId
+        if (nctId && !seenNct.has(nctId)) { seenNct.add(nctId); allStudies.push(study) }
+      }
+    }
 
+    // Step 1 — variant-specific search (HGVS must be meaningful)
+    const hasVariant = hgvs && hgvs !== 'unknown' && !hgvs.startsWith('del_')
+    let variantHits: RawStudy[] = []
+    if (hasVariant) {
+      try {
+        variantHits = await fetchCTStudies(`${geneUpper} ${hgvs}`, 'RECRUITING', 10)
+      } catch { /* fall through */ }
+    }
+
+    if (variantHits.length > 0) {
+      // Variant-specific search succeeded — also add gene-level terms for breadth
+      addStudies(variantHits)
+    }
+
+    // Step 2 — gene-level search using curated disease terms
+    const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
+    const fetches = terms.map(term => fetchCTStudies(term, 'RECRUITING', 15).catch(() => [] as RawStudy[]))
     const results = await Promise.allSettled(fetches)
     for (const r of results) {
       if (r.status !== 'fulfilled') continue
-      for (const study of r.value) {
-        const nctId = study.protocolSection?.identificationModule?.nctId
-        if (nctId && !seenNct.has(nctId)) {
-          seenNct.add(nctId)
-          allStudies.push(study)
-        }
-      }
+      addStudies(r.value)
+    }
+
+    // Step 3 — gene-only fallback if nothing found yet
+    if (allStudies.length === 0) {
+      try {
+        const fallback = await fetchCTStudies(geneUpper, 'RECRUITING', 20)
+        addStudies(fallback)
+      } catch { /* give up gracefully */ }
     }
 
     const relevant = filterRelevantStudies(allStudies, gene)
@@ -887,14 +998,21 @@ async function fetchTier2(gene: string, disease: string, age: number | null, sex
     const eligibleTrials = allTrials.filter(t => t.eligibility_overall !== 'INELIGIBLE')
     const ineligibleCount = allTrials.length - eligibleTrials.length
 
+    const TRIAL_CAP = 5
+    const seeMoreUrl = eligibleTrials.length > TRIAL_CAP
+      ? `https://clinicaltrials.gov/search?term=${encodeURIComponent(gene)}&status=RECRUITING&studyType=INTERVENTIONAL`
+      : undefined
+
     return {
-      trials: eligibleTrials,
+      trials: eligibleTrials.slice(0, TRIAL_CAP),
       total_fetched: allStudies.length,
       total_after_scoring: relevant.length,
       total_ineligible: ineligibleCount,
+      total_eligible: eligibleTrials.length,
+      see_more_url: seeMoreUrl,
     }
   } catch {
-    return { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0 }
+    return { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0, total_eligible: 0 }
   }
 }
 
@@ -914,6 +1032,7 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
         'https://clinicaltrials.gov/api/v2/studies',
         `?query.term=${query}`,
         `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
+        `&filter.studyType=INTERVENTIONAL`,
         `&pageSize=20&format=json`,
       ].join('')
       const res = await fetch(url)
@@ -964,7 +1083,7 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
         }
       })
 
-    return { pipeline }
+    return { pipeline: pipeline.slice(0, 5) }
   } catch {
     return { pipeline: [] }
   }
@@ -977,6 +1096,81 @@ function deriveOverallStatus(tier1: Tier1Result, tier2: Tier2Result, tier3: Tier
   if (tier1.drugs.length > 0 || tier2.trials.length > 0) return 'PARTIALLY_ACTIONABLE'
   if (tier3.pipeline.length > 0) return 'INVESTIGATIONAL_ONLY'
   return 'NOT_ACTIONABLE'
+}
+
+// ─── Specialist recommendation by gene ───────────────────────────────────────
+const GENE_SPECIALIST: Record<string, string> = {
+  CFTR:   'pulmonologist',
+  DMD:    'neurologist or neuromuscular specialist',
+  SOD1:   'neurologist',
+  SMN1:   'neurologist or neuromuscular specialist',
+  HTT:    'neurologist',
+  FXN:    'neurologist',
+  GBA:    'neurologist or hematologist',
+  TTR:    'cardiologist or neurologist',
+  MYBPC3: 'cardiologist', MYH7: 'cardiologist', KCNQ1: 'cardiologist', KCNH2: 'cardiologist',
+  SCN5A:  'cardiologist', LMNA: 'cardiologist', PKP2: 'cardiologist',
+  BRCA1:  'oncologist and genetic counselor', BRCA2: 'oncologist and genetic counselor',
+  MLH1:   'oncologist and genetic counselor', MSH2:  'oncologist and genetic counselor',
+  MSH6:   'oncologist and genetic counselor', PMS2:  'oncologist and genetic counselor',
+  TP53:   'oncologist and genetic counselor', PALB2: 'oncologist and genetic counselor',
+  ATM:    'oncologist and genetic counselor', CHEK2: 'oncologist and genetic counselor',
+  HBB:    'hematologist', F8: 'hematologist', F9: 'hematologist',
+  LDLR:   'cardiologist or lipid specialist', PCSK9: 'cardiologist or lipid specialist',
+  NF1:    'neurologist or oncologist', VHL: 'oncologist', RET: 'endocrinologist or oncologist',
+  PTEN:   'oncologist and genetic counselor', APC:  'gastroenterologist and genetic counselor',
+  CDH1:   'gastroenterologist and genetic counselor',
+  PKD1:   'nephrologist', PKD2: 'nephrologist',
+  ATP7B:  'hepatologist or neurologist',
+  APOE:   'neurologist or genetic counselor',
+  GAA:    'metabolic disease specialist',
+  HFE:    'hepatologist',
+}
+
+function buildActionPlan(
+  gene: string,
+  tier1: Tier1Result,
+  tier2: Tier2Result,
+  tier3: Tier3Result,
+): ActionPlan {
+  void tier3 // reserved for future red-status nuance
+  const fdaDrug = tier1.drugs.find(d => d.fda_approved)
+  const bestTrial = tier2.trials[0]
+  const specialist = GENE_SPECIALIST[gene.toUpperCase()] || 'genetic counselor'
+
+  const treatmentBullet: ActionBullet = fdaDrug
+    ? {
+        label: 'Treatment',
+        text: `${fdaDrug.drug_name} is FDA-approved for this ${gene} variant.`,
+        tier_anchor: 'tier1',
+      }
+    : {
+        label: 'Treatment',
+        text: `No FDA-approved therapy is currently matched to your ${gene} variant.`,
+        tier_anchor: 'tier1',
+      }
+
+  const trialBullet: ActionBullet = bestTrial
+    ? {
+        label: 'Clinical Trial',
+        text: `A recruiting trial is available${bestTrial.phase ? ` (${bestTrial.phase})` : ''}: \u201c${bestTrial.title.length > 90 ? bestTrial.title.slice(0, 90) + '\u2026' : bestTrial.title}\u201d Bring this to your next appointment.`,
+        tier_anchor: 'tier2',
+        url: bestTrial.url,
+      }
+    : {
+        label: 'Clinical Trial',
+        text: `No interventional trials found for ${gene} right now. Check ClinicalTrials.gov as new studies open regularly.`,
+        tier_anchor: 'tier2',
+        url: `https://clinicaltrials.gov/search?term=${encodeURIComponent(gene)}&status=RECRUITING&studyType=INTERVENTIONAL`,
+      }
+
+  const specialistBullet: ActionBullet = {
+    label: 'Next Step',
+    text: `Talk to a ${specialist} about your ${gene} variant. A genetic counselor can also help interpret your results and guide next steps.`,
+  }
+
+  const status: ActionPlan['status'] = fdaDrug ? 'green' : bestTrial ? 'amber' : 'red'
+  return { status, bullets: [treatmentBullet, trialBullet, specialistBullet] }
 }
 
 // ─── Static file upload: VCF client-side parser, PDF unsupported ─────────────
@@ -1107,9 +1301,17 @@ export async function staticAnalyze(
       overall_status: 'NOT_ACTIONABLE',
       tier0: { classification: 'Unknown significance', confidence: 'LOW', review_stars: 0, review_status: 'No data', gnomad_af: null, gnomad_interpretation: 'Allele frequency not available', gnomad_url: null, clinvar_id: null, clingen_note: null },
       tier1: { drugs: [], surveillance: [] },
-      tier2: { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0 },
+      tier2: { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0, total_eligible: 0 },
       tier3: { pipeline: [] },
       enrichment: undefined,
+      action_plan: {
+        status: 'red',
+        bullets: [
+          { label: 'Treatment', text: 'Variant could not be recognized — enter a valid gene/variant to check therapies.', tier_anchor: 'tier1' },
+          { label: 'Clinical Trial', text: 'Enter a valid variant to search for recruiting trials.', tier_anchor: 'tier2' },
+          { label: 'Next Step', text: 'Consult a genetic counselor to interpret your genetic report.' },
+        ],
+      },
       patient_summary: 'The gene or variant could not be recognized. Please check the spelling or try a different format (e.g. HGVS notation, gene symbol, or common name like F508del).',
       patient_next_steps: ['Try entering your gene symbol directly (e.g. CFTR, BRCA2).', 'Use HGVS notation like c.1521_1523del for best results.'],
       clinician_notes: ['Gene normalization failed — UNKNOWN returned.'],
@@ -1118,14 +1320,15 @@ export async function staticAnalyze(
 
   const [tier0, tier1, tier2] = await Promise.all([
     fetchTier0(gene, hgvs),
-    fetchTier1(gene),
-    fetchTier2(gene, disease, age, sex),
+    fetchTier1(gene, functionalClass),
+    fetchTier2(gene, hgvs, disease, age, sex),
   ])
 
   const tier2NctIds = new Set(tier2.trials.map(t => t.nct_id))
   const tier3 = await fetchTier3(gene, tier2NctIds)
 
   const overallStatus = deriveOverallStatus(tier1, tier2, tier3)
+  const action_plan = buildActionPlan(gene, tier1, tier2, tier3)
 
   const fdaDrugs = tier1.drugs.filter(d => d.fda_approved).map(d => d.drug_name)
   const patientSummary = fdaDrugs.length > 0
@@ -1148,6 +1351,7 @@ export async function staticAnalyze(
     tier2,
     tier3,
     enrichment: undefined,
+    action_plan,
     patient_summary: patientSummary,
     patient_next_steps: [
       'Share these results with your physician or genetic counselor.',

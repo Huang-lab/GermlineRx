@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AnalyzeResponse, EnrichmentResult } from '../../types'
+import type { AnalyzeResponse, EnrichmentResult, ActionPlan } from '../../types'
 import ConfidenceBadge from './ConfidenceBadge'
 import TrialCard from './TrialCard'
 
@@ -12,12 +12,140 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
 
 interface Props { data: AnalyzeResponse; onReset: () => void }
 
+// Extracts the best single brand name for search (avoids slash/plus compounds, annotation parens)
+function getDrugSearchTerm(drugName: string): string {
+  const brandMatch = drugName.match(/\(([^)]+)\)/)
+  if (brandMatch?.[1]) {
+    // Split on / or + to get only the first brand when multiple are listed
+    return brandMatch[1].split(/[\/+]/)[0].trim()
+  }
+  return drugName.split('(')[0].trim().split(/[\/+]/)[0].trim()
+}
+
+// Returns false for medical procedures/devices that have no drug package label
+const NON_DRUG_TERMS = ['phlebotomy', 'icd', 'implantable cardioverter', 'beta-blocker', 'investigational']
+function isDrugLinkable(drugName: string): boolean {
+  const lower = drugName.toLowerCase()
+  return !NON_DRUG_TERMS.some(term => lower.includes(term))
+}
+
+const UNCERTAIN_CLASSIFICATIONS = ['uncertain', 'benign', 'likely benign', 'vus']
+function isUncertainClassification(classification: string): boolean {
+  const lower = classification.toLowerCase()
+  return UNCERTAIN_CLASSIFICATIONS.some(t => lower.includes(t))
+}
+
+// ─── ClinVar pathogenicity badge ────────────────────────────────────────────────────
+function ClinVarBadge({ classification, clinvarId }: { classification: string; clinvarId: string | null }) {
+  const lower = classification.toLowerCase()
+  let cls = 'bg-gray-100 border-gray-300 text-gray-600'
+  let icon = '❓'
+  if (lower.includes('pathogenic') && !lower.includes('likely') && !lower.includes('benign')) {
+    cls = 'bg-red-100 border-red-300 text-red-700'; icon = '⚠️'
+  } else if (lower.includes('likely pathogenic')) {
+    cls = 'bg-orange-100 border-orange-300 text-orange-700'; icon = '⚠️'
+  } else if (lower.includes('uncertain') || lower.includes('vus') || lower.includes('conflicting')) {
+    cls = 'bg-yellow-100 border-yellow-300 text-yellow-700'; icon = '⚠️'
+  } else if (lower.includes('likely benign')) {
+    cls = 'bg-blue-100 border-blue-300 text-blue-700'; icon = '✅'
+  } else if (lower.includes('benign')) {
+    cls = 'bg-green-100 border-green-300 text-green-700'; icon = '✅'
+  }
+  const badge = (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${cls}`}>
+      <span>{icon}</span>
+      <span>ClinVar: {classification}</span>
+    </span>
+  )
+  if (clinvarId) {
+    return (
+      <a
+        href={`https://www.ncbi.nlm.nih.gov/clinvar/variation/${clinvarId}`}
+        target="_blank" rel="noopener noreferrer"
+        className="hover:opacity-80 transition-opacity"
+        title={`ClinVar variation ${clinvarId}`}
+      >
+        {badge}
+      </a>
+    )
+  }
+  return badge
+}
+
+// ─── gnomAD allele frequency badge ─────────────────────────────────────────────────
+function GnomADBadge({ af, url }: { af: number | null; url?: string | null }) {
+  let label: string
+  let cls: string
+  if (af === null) {
+    label = 'AF: Not in gnomAD'; cls = 'bg-gray-100 border-gray-300 text-gray-500'
+  } else if (af > 0.01) {
+    label = `AF: ${af.toFixed(4)} — Common`; cls = 'bg-green-100 border-green-300 text-green-700'
+  } else if (af > 0.001) {
+    label = `AF: ${af.toFixed(5)} — Rare`; cls = 'bg-blue-100 border-blue-300 text-blue-700'
+  } else if (af > 0.0001) {
+    label = `AF: ${af.toFixed(6)} — Very Rare`; cls = 'bg-orange-100 border-orange-300 text-orange-700'
+  } else {
+    label = `AF: ${af.toExponential(2)} — Ultra-Rare`; cls = 'bg-red-100 border-red-300 text-red-700'
+  }
+  const badge = (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${cls}`}>
+      <span>gnomAD {label}</span>
+    </span>
+  )
+  if (url) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer"
+         className="hover:opacity-80 transition-opacity" title="View on gnomAD">
+        {badge} <span className="text-xs text-brand-500">↗</span>
+      </a>
+    )
+  }
+  return badge
+}
+
+function ActionPlanCard({ plan, gene }: { plan: ActionPlan; gene: string }) {
+  const config = {
+    green: { bg: 'bg-green-50 border-green-300',  icon: '🟢', label: 'FDA-Approved Treatment Available' },
+    amber: { bg: 'bg-amber-50 border-amber-300',  icon: '🟡', label: 'Clinical Trials Available' },
+    red:   { bg: 'bg-red-50 border-red-200',       icon: '🔴', label: 'No Matched Therapy Found' },
+  }[plan.status]
+  return (
+    <div className={`rounded-xl border-2 p-4 ${config.bg}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-base">{config.icon}</span>
+        <h3 className="font-bold text-gray-900 text-sm tracking-wide">{config.label} — {gene}</h3>
+      </div>
+      <ol className="space-y-2.5">
+        {plan.bullets.map((b, i) => (
+          <li key={i} className="flex gap-3">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest w-24 shrink-0 pt-0.5">{b.label}</span>
+            <span className="text-sm text-gray-800 leading-relaxed">
+              {b.text}
+              {b.url && (
+                <a href={b.url} target="_blank" rel="noopener noreferrer"
+                   className="ml-1 text-brand-600 hover:underline text-xs">
+                  View ↗
+                </a>
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 export default function ResultsPanel({ data, onReset }: Props) {
   const [view, setView] = useState<'patient' | 'clinician'>('patient')
   const status = STATUS_STYLES[data.overall_status] || STATUS_STYLES.NOT_ACTIONABLE
 
   return (
     <div className="space-y-6">
+      {/* Action Plan — always first */}
+      {data.action_plan && (
+        <ActionPlanCard plan={data.action_plan} gene={data.gene} />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -92,7 +220,14 @@ export default function ResultsPanel({ data, onReset }: Props) {
           </p>
         )}
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <InfoRow label="Classification" value={data.tier0.classification} />
+          {/* ClinVar + gnomAD badges span full width */}
+          <div className="col-span-2 flex items-center gap-2 flex-wrap">
+            <ClinVarBadge
+              classification={data.tier0.classification}
+              clinvarId={data.tier0.clinvar_id}
+            />
+            <GnomADBadge af={data.tier0.gnomad_af} url={data.tier0.gnomad_url} />
+          </div>
           {data.hgvs !== 'unknown' && (
             <InfoRow label="Evidence" value={
               <span title={data.tier0.review_status}>
@@ -101,24 +236,6 @@ export default function ResultsPanel({ data, onReset }: Props) {
                 ))}
                 <span className="text-xs text-gray-400 ml-1">({data.tier0.review_status})</span>
               </span>
-            } />
-          )}
-          {data.tier0.gnomad_af !== null && (
-            <InfoRow label="gnomAD AF" value={
-              data.tier0.gnomad_url
-                ? <a href={data.tier0.gnomad_url} target="_blank" rel="noopener noreferrer"
-                     className="text-brand-600 hover:underline">
-                    {data.tier0.gnomad_af.toFixed(4)} ↗
-                  </a>
-                : data.tier0.gnomad_af.toFixed(4)
-            } />
-          )}
-          {data.tier0.gnomad_af === null && data.tier0.gnomad_url && (
-            <InfoRow label="gnomAD" value={
-              <a href={data.tier0.gnomad_url} target="_blank" rel="noopener noreferrer"
-                 className="text-brand-600 hover:underline">
-                View on gnomAD ↗
-              </a>
             } />
           )}
           {data.tier0.clinvar_id && (
@@ -140,20 +257,44 @@ export default function ResultsPanel({ data, onReset }: Props) {
 
       {/* Tier 1 — Approved Therapies */}
       <TierSection title="FDA-Approved Therapies" icon="💊" count={data.tier1.drugs.length}>
+        {/* Pathogenicity gate warning */}
+        {data.tier1.drugs.length > 0 && isUncertainClassification(data.tier0.classification) && (
+          <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+            ⚠ Your variant is classified as <strong>{data.tier0.classification}</strong>.
+            Therapies shown are associated with the <strong>{data.gene}</strong> gene broadly —
+            confirm with a genetic counselor whether they apply to your specific variant.
+          </div>
+        )}
         {data.tier1.drugs.length === 0 ? (
-          <p className="text-sm text-gray-500">No FDA-approved therapies matched for this variant.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500">No curated FDA therapy data exists for this variant.</p>
+            <a
+              href={`https://platform.opentargets.org/search?q=${encodeURIComponent(data.gene)}&entityNames=target`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center text-xs text-brand-600 hover:underline"
+            >
+              Explore gene-level drug associations on OpenTargets ↗
+            </a>
+          </div>
         ) : (
           <div className="space-y-3">
-            {data.tier1.drugs.map((drug, i) => (
+            {data.tier1.drugs.map((drug, i) => {
+              const drugSearchTerm = getDrugSearchTerm(drug.drug_name)
+              const linkable = drug.fda_approved && isDrugLinkable(drug.drug_name)
+              return (
               <div key={i} className="border border-gray-200 rounded-lg p-3 bg-white">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <a
-                    href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drug.drug_name)}`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-sm font-bold text-brand-700 hover:underline"
-                  >
-                    {drug.drug_name} ↗
-                  </a>
+                  {linkable ? (
+                    <a
+                      href={`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drugSearchTerm)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-bold text-brand-700 hover:underline"
+                    >
+                      {drug.drug_name} ↗
+                    </a>
+                  ) : (
+                    <span className="text-sm font-bold text-brand-700">{drug.drug_name}</span>
+                  )}
                   <div className="flex gap-1.5 flex-wrap">
                     {drug.fda_approved && (
                       <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
@@ -175,16 +316,19 @@ export default function ResultsPanel({ data, onReset }: Props) {
                 )}
                 <p className="text-xs text-gray-400 mt-1">
                   Source: {drug.source || 'DGIdb'}{' '}
-                  <a
-                    href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=overview.process&varDrugName=${encodeURIComponent(drug.drug_name)}&ActiveIngredient=&ApplTypeN=0`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-brand-500 hover:underline ml-1"
-                  >
-                    FDA search ↗
-                  </a>
+                  {linkable && (
+                    <a
+                      href={`https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm?event=BasicSearch.process&varDrugName=${encodeURIComponent(drugSearchTerm)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-brand-500 hover:underline ml-1"
+                    >
+                      FDA search ↗
+                    </a>
+                  )}
                 </p>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
         {data.tier1.surveillance.length > 0 && (
@@ -205,7 +349,7 @@ export default function ResultsPanel({ data, onReset }: Props) {
       {/* Tier 2 — Clinical Trials */}
       <TierSection title="Recruiting Clinical Trials" icon="🏥"
         count={data.tier2.trials.length}
-        subtitle={`${data.tier2.total_fetched} fetched → ${data.tier2.total_after_scoring} scored → ${data.tier2.trials.length} shown`}
+        subtitle="Confirm eligibility with your care team"
       >
         {data.tier2.trials.length === 0 ? (
           <p className="text-sm text-gray-500">No matching recruiting trials found at this time.</p>
@@ -218,8 +362,16 @@ export default function ResultsPanel({ data, onReset }: Props) {
         )}
         {(data.tier2.total_ineligible ?? 0) > 0 && (
           <p className="text-xs text-gray-400 mt-2">
-            {data.tier2.total_ineligible} trial{data.tier2.total_ineligible === 1 ? '' : 's'} excluded — age or sex outside eligibility range.
+            {data.tier2.total_ineligible} additional trial{data.tier2.total_ineligible === 1 ? '' : 's'} not shown — age or sex outside eligibility range.
           </p>
+        )}
+        {data.tier2.see_more_url && (data.tier2.total_eligible ?? 0) > 5 && (
+          <div className="mt-3 text-center">
+            <a href={data.tier2.see_more_url} target="_blank" rel="noopener noreferrer"
+               className="text-xs text-brand-600 hover:underline">
+              See {(data.tier2.total_eligible ?? 0) - 5} more interventional trial{((data.tier2.total_eligible ?? 0) - 5) === 1 ? '' : 's'} on ClinicalTrials.gov ↗
+            </a>
+          </div>
         )}
       </TierSection>
 
