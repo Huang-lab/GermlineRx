@@ -171,6 +171,9 @@ export interface ExtractedVariant {
   confidence: string
   raw_text: string
   classification: string | null
+  clinvar_id?: string | null
+  zygosity?: string | null
+  inheritance?: string | null
 }
 
 export interface UploadResponse {

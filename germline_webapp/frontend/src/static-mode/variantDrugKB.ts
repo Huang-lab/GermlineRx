@@ -1382,6 +1382,32 @@ const THERAPY_KB: KBEntry[] =
     "line": "Add-on (homozygous FH / ARH, age ≥12)",
     "caveat": "Monthly IV infusion. Most potent LDL-lowering for receptor-pathway-independent mechanism. Reserved for severe/refractory cases.",
     "source": "FDA BLA 761181"
+  },
+  {
+    "gene": "PKHD1",
+    "match_functional_classes": null,
+    "action_type": "surveillance",
+    "drug_name": null,
+    "action": "Renal ultrasound monitoring every 6-12 months to track kidney size and cyst progression. Blood pressure monitoring.",
+    "fda_approved": null,
+    "approval_year": null,
+    "evidence_level": "Guideline",
+    "line": null,
+    "caveat": null,
+    "source": "KDIGO Guidelines"
+  },
+  {
+    "gene": "PKHD1",
+    "match_functional_classes": null,
+    "action_type": "surveillance",
+    "drug_name": null,
+    "action": "Hepatic evaluation (liver ultrasound, liver function tests) for congenital hepatic fibrosis, a common ARPKD complication.",
+    "fda_approved": null,
+    "approval_year": null,
+    "evidence_level": "Guideline",
+    "line": null,
+    "caveat": null,
+    "source": "KDIGO Guidelines"
   }
 ]
 export function lookupVariantDrugKB(gene: string, functionalClass: string | null): DrugEntry[] {

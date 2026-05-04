@@ -103,6 +103,17 @@ const DISEASE_TO_GENE: Record<string, string> = {
   "marfan":                     "FBN1",
   "polycystic kidney":          "PKD1",
   "wilson":                     "ATP7B",
+  "arpkd":                      "PKHD1",
+  "autosomal recessive polycystic": "PKHD1",
+  "phenylketonuria":            "PAH",
+  "pku":                        "PAH",
+  "pompe":                      "GAA",
+  "tay-sachs":                  "HEXA",
+  "rett syndrome":              "MECP2",
+  "dravet":                     "SCN1A",
+  "noonan":                     "PTPN11",
+  "alport":                     "COL4A5",
+  "usher":                      "USH2A",
 }
 
 // ─── Curated AF fallback (for common variants when gnomAD API fails) ──────────
@@ -130,10 +141,11 @@ const CLINGEN_ACTIONABLE = new Set([
 
 export async function staticNormalize(disease: string, mutationText: string): Promise<NormalizeResponse> {
   const raw = mutationText.trim()
-  const key = raw.toLowerCase().trim()
+  const rawClean = raw.replace(/^NM_\d+\.\d+:/, '')
+  const key = rawClean.toLowerCase().trim()
 
   // Gene-only mode (no mutation entered)
-  if (!raw) {
+  if (!rawClean) {
     const gene = extractGeneFromDisease(disease)
     if (gene) {
       return buildResult('', gene, 'unknown', `${gene} (gene-only)`, null, 'LOW',
@@ -147,7 +159,7 @@ export async function staticNormalize(disease: string, mutationText: string): Pr
   if (aliasResult) return aliasResult
 
   // HGVS c. notation — pass through, extract gene from disease field
-  const hgvsMatch = raw.match(/c\.[0-9A-Za-z_>+\-*?]+/)
+  const hgvsMatch = rawClean.match(/c\.[0-9A-Za-z_>+\-*?]+/)
   if (hgvsMatch) {
     const gene = extractGeneFromDisease(disease)
     return buildResult(raw, gene || 'UNKNOWN', hgvsMatch[0], hgvsMatch[0], null, 'MODERATE',
@@ -155,7 +167,7 @@ export async function staticNormalize(disease: string, mutationText: string): Pr
   }
 
   // rsID
-  const rsMatch = raw.match(/rs\d+/i)
+  const rsMatch = rawClean.match(/rs\d+/i)
   if (rsMatch) {
     const gene = extractGeneFromDisease(disease)
     return buildResult(raw, gene || 'UNKNOWN', rsMatch[0], rsMatch[0], null, 'MODERATE',
@@ -163,7 +175,7 @@ export async function staticNormalize(disease: string, mutationText: string): Pr
   }
 
   // Protein notation
-  const protMatch = raw.match(/p\.[A-Za-z]{1,3}\d+[A-Za-z*]{1,3}|[A-Z][a-z]{2}\d+[A-Za-z*]/)
+  const protMatch = rawClean.match(/p\.[A-Za-z]{1,3}\d+[A-Za-z*]{1,3}|[A-Z][a-z]{2}\d+[A-Za-z*]/)
   if (protMatch) {
     const gene = extractGeneFromDisease(disease)
     const display = protMatch[0].replace(/^p\./, '')
@@ -174,7 +186,7 @@ export async function staticNormalize(disease: string, mutationText: string): Pr
   // Try ClinVar API to resolve unknown input
   const gene = extractGeneFromDisease(disease)
   try {
-    const q = encodeURIComponent(`"${raw}"[All Fields] AND pathogenic[clinsig]`)
+    const q = encodeURIComponent(`"${rawClean}"[All Fields] AND pathogenic[clinsig]`)
     const res = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term=${q}&retmode=json&retmax=1`)
     const json = await res.json()
     const ids: string[] = json?.esearchresult?.idlist || []
@@ -746,6 +758,11 @@ const SEARCH_TERMS: Record<string, string[]> = {
   "PALB2":  ["PALB2 breast cancer PARP inhibitor"],
   "ATM":    ["ATM breast cancer PARP inhibitor", "ATM pancreatic cancer"],
   "CHEK2":  ["CHEK2 breast cancer surveillance"],
+  "PKHD1":  ["autosomal recessive polycystic kidney PKHD1", "ARPKD fibrocystin", "PKHD1 kidney disease"],
+  "PAH":    ["phenylketonuria PAH", "PKU phenylalanine hydroxylase"],
+  "GAA":    ["Pompe disease GAA", "acid alpha-glucosidase deficiency"],
+  "SCN1A":  ["Dravet syndrome SCN1A", "SCN1A epilepsy"],
+  "GJB2":   ["GJB2 hearing loss connexin 26", "nonsyndromic deafness GJB2"],
 }
 
 function scoreTrialRelevance(trial: TrialResult, gene: string): number {
@@ -1033,6 +1050,7 @@ async function fetchTier2(gene: string, hgvs: string, disease: string, age: numb
     if (isHealthyContext && SEARCH_TERMS[geneUpper]) {
       terms.push(`${geneUpper} carrier`, `${geneUpper} prevention`, `${geneUpper} risk reduction`)
     }
+    terms.push(geneUpper)  // Always include bare gene search
     const uniqueTerms = Array.from(new Set(terms))
     const fetches = uniqueTerms.map(term => fetchCTStudies(term, 'RECRUITING', 15).catch(() => [] as RawStudy[]))
     const results = await Promise.allSettled(fetches)
@@ -1110,6 +1128,15 @@ const GENE_SPECIALIST: Record<string, string> = {
   APOE:   'neurologist or genetic counselor',
   GAA:    'metabolic disease specialist',
   HFE:    'hepatologist',
+  PKHD1:  'nephrologist',
+  PAH:    'metabolic disease specialist',
+  SCN1A:  'neurologist (epileptologist)',
+  GJB2:   'audiologist and genetic counselor',
+  HEXA:   'neurologist or metabolic disease specialist',
+  MECP2:  'neurologist',
+  COL4A5: 'nephrologist',
+  PTPN11: 'cardiologist and genetic counselor',
+  USH2A:  'ophthalmologist and audiologist',
 }
 
 function buildActionPlan(

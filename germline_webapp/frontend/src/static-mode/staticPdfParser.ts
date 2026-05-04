@@ -8,6 +8,28 @@ const KNOWN_GENES = [
   'PTEN','APC','FBN1','PKD1','PKD2','HFE','ATP7B','KCNQ1','KCNH2',
   'SCN5A','LMNA','PKP2','COL3A1','RB1','STK11','CDH1','HNF1A','GCK',
   'PCSK9','APOE','LRRK2','RYR1','RYR2',
+  // Renal
+  'PKHD1','NPHP1','NPHP4','CEP290','UMOD','SLC12A3','CLCNKB',
+  // Neuro
+  'SCN1A','SCN2A','KCNQ2','MECP2','UBE3A','CDKL5','FOXG1',
+  // Neuromuscular
+  'DYSF','CAPN3','FKRP','LAMA2','COL6A1','COL6A2','COL6A3',
+  // Metabolic
+  'PAH','GAA','HEXA','IDUA','SGSH','ACADM','OTC','CBS','MTHFR',
+  // Hearing
+  'GJB2','SLC26A4','OTOF','MYO7A','CDH23',
+  // Eye
+  'ABCA4','USH2A','RPE65','RS1',
+  // Connective tissue
+  'COL1A1','COL1A2','ELN','FLNA',
+  // RASopathies
+  'PTPN11','SOS1','RAF1','BRAF','MAP2K1','HRAS','KRAS','NRAS','RIT1',
+  // Vascular
+  'ACTA2','MYH11','TGFBR1','TGFBR2','SMAD3','NOTCH1',
+  // Immune
+  'CYBB','AIRE','FOXP3','RAG1','RAG2',
+  // Other commonly reported
+  'SERPINA1','CYP21A2','CFHR5','COL4A3','COL4A4','COL4A5',
 ]
 
 const KNOWN_ALIASES: Record<string, { gene: string; hgvs: string }> = {
@@ -54,7 +76,7 @@ async function extractPdfText(file: File): Promise<string> {
 }
 
 function findClassificationNear(text: string, start: number): string | null {
-  const window = text.slice(Math.max(0, start - 200), start + 200).toLowerCase()
+  const window = text.slice(Math.max(0, start - 500), start + 500).toLowerCase()
   for (const [kw, cls] of Object.entries(CLS_KEYWORDS)) {
     if (window.includes(kw)) return cls
   }
@@ -134,6 +156,77 @@ export async function parsePdf(file: File): Promise<UploadResponse> {
       raw_text: `${gene} ${prot}`,
       classification: findClassificationNear(fullText, m.index),
     })
+  }
+
+  // 3b. Extended protein notation (frameshift, nonsense, in-frame del/dup)
+  const protRegexExt = /\b(p\.[A-Z][a-z]{2}\d+[A-Z][a-z]{2,}fs\*\d+|p\.[A-Z][a-z]{2}\d+\*|p\.[A-Z][a-z]{2}\d+_[A-Z][a-z]{2}\d+(?:del|dup)|p\.[A-Z][a-z]{2}\d+del)\b/g
+  while ((m = protRegexExt.exec(fullText)) !== null) {
+    const prot = m[1]
+    const surrounding = fullText.slice(Math.max(0, m.index - 150), m.index + 50)
+    const geneMatch = surrounding.match(new RegExp(`\\b(${KNOWN_GENES.join('|')})\\b`))
+    const gene = geneMatch ? geneMatch[1] : null
+    if (!gene) continue
+    const key = `${gene}:${prot}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    variants.push({
+      gene,
+      hgvs: prot,
+      confidence: 'MODERATE',
+      raw_text: `${gene} ${prot}`,
+      classification: findClassificationNear(fullText, m.index),
+    })
+  }
+
+  // 4. Fallback: any gene-like symbol near HGVS that wasn't caught above
+  const GENE_FALSE_POSITIVES = new Set([
+    'THE','AND','FOR','NOT','THIS','WITH','FROM','THAT','HAVE','BEEN',
+    'ALSO','ONLY','INTO','EACH','SUCH','THAN','PAGE','TEST','TYPE',
+    'LAST','GENE','OMIM','MODE','HIGH','NEXT','BOTH','DATE','NAME',
+    'MALE','INFO','YEAR','CLIA','NONE','BASED','EXON','STOP','PLUS',
+  ])
+  const hgvsHits = [...fullText.matchAll(/\b(c\.[0-9A-Za-z_>+\-*[\]()]+)/g)]
+  for (const hit of hgvsHits) {
+    const window = fullText.slice(Math.max(0, hit.index! - 200), hit.index!)
+    const geneCandidate = window.match(/\b([A-Z][A-Z0-9]{1,12})\b/g)
+    if (!geneCandidate) continue
+    const gene = geneCandidate[geneCandidate.length - 1]
+    if (GENE_FALSE_POSITIVES.has(gene)) continue
+    if (gene.length < 2) continue
+    const key = `${gene}:${hit[1]}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    variants.push({
+      gene,
+      hgvs: hit[1],
+      confidence: 'LOW',
+      raw_text: `${gene} ${hit[1]}`,
+      classification: findClassificationNear(fullText, hit.index!),
+    })
+  }
+
+  // Post-processing: extract clinvar_id, zygosity, inheritance
+  for (const v of variants) {
+    const idx = fullText.indexOf(v.raw_text)
+    if (idx === -1) continue
+    const nearbyText = fullText.slice(Math.max(0, idx - 300), idx + 300)
+
+    const clinvarMatch = nearbyText.match(/\b(\d{5,7})\b/g)
+    if (clinvarMatch) {
+      for (const candidate of clinvarMatch) {
+        const num = parseInt(candidate)
+        if (num >= 10000 && (num < 2000 || num > 2030)) {
+          v.clinvar_id = candidate
+          break
+        }
+      }
+    }
+
+    const zygoMatch = nearbyText.match(/\b(heterozygous|homozygous|hemizygous)\b/i)
+    if (zygoMatch) v.zygosity = zygoMatch[1].toLowerCase()
+
+    const inheritMatch = nearbyText.match(/\b(paternal|maternal|de novo)\b/i)
+    if (inheritMatch) v.inheritance = inheritMatch[1].toLowerCase()
   }
 
   const warnings: string[] = []
