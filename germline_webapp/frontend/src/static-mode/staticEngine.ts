@@ -24,6 +24,8 @@ import type {
   DrugEntry,
   TrialResult,
   PipelineEntry,
+  ActionPlan,
+  ActionBullet,
 } from '../types'
 
 // ─── Inline alias table (common patient-friendly names → canonical gene + HGVS) ─
@@ -601,20 +603,9 @@ async function fetchTier1(gene: string, functionalClass: string | null): Promise
     return { drugs: [], surveillance: kbSurveillance }
   }
 
-  // Fallback for genes not in KB
-  const otDrugs = await fetchTier1OpenTargets(gene)
-  if (otDrugs.length > 0) {
-    return {
-      drugs: otDrugs.map(d => ({
-        ...d,
-        caveat: (d.caveat || '') + ' ⚠ Automated match — verify with your physician.',
-      })),
-      surveillance: kbSurveillance,
-    }
-  }
-
-  const dgidbDrugs = await fetchTier1DGIdb(gene)
-  return { drugs: dgidbDrugs, surveillance: kbSurveillance }
+  // No API fallback — curated KB only ensures drug-variant accuracy.
+  // For gene-level exploration, see the OpenTargets link in the UI.
+  return { drugs: [], surveillance: kbSurveillance }
 }
 
 // ─── Gene-specific search terms (shared by Tier 2 and Tier 3) ────────────────
@@ -886,7 +877,7 @@ async function fetchTier2(gene: string, disease: string, age: number | null, sex
 
     const fetches = terms.map(async (term) => {
       const query = encodeURIComponent(term)
-      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&pageSize=15&format=json`
+      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&filter.studyType=INTERVENTIONAL&pageSize=15&format=json`
       const res = await fetch(url)
       const json = await res.json()
       return (json?.studies || []) as RawStudy[]
@@ -912,14 +903,21 @@ async function fetchTier2(gene: string, disease: string, age: number | null, sex
     const eligibleTrials = allTrials.filter(t => t.eligibility_overall !== 'INELIGIBLE')
     const ineligibleCount = allTrials.length - eligibleTrials.length
 
+    const TRIAL_CAP = 5
+    const seeMoreUrl = eligibleTrials.length > TRIAL_CAP
+      ? `https://clinicaltrials.gov/search?term=${encodeURIComponent(gene)}&status=RECRUITING&studyType=INTERVENTIONAL`
+      : undefined
+
     return {
-      trials: eligibleTrials,
+      trials: eligibleTrials.slice(0, TRIAL_CAP),
       total_fetched: allStudies.length,
       total_after_scoring: relevant.length,
       total_ineligible: ineligibleCount,
+      total_eligible: eligibleTrials.length,
+      see_more_url: seeMoreUrl,
     }
   } catch {
-    return { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0 }
+    return { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0, total_eligible: 0 }
   }
 }
 
@@ -939,6 +937,7 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
         'https://clinicaltrials.gov/api/v2/studies',
         `?query.term=${query}`,
         `&filter.overallStatus=NOT_YET_RECRUITING,ACTIVE_NOT_RECRUITING`,
+        `&filter.studyType=INTERVENTIONAL`,
         `&pageSize=20&format=json`,
       ].join('')
       const res = await fetch(url)
@@ -989,7 +988,7 @@ async function fetchTier3(gene: string, tier2NctIds: Set<string>): Promise<Tier3
         }
       })
 
-    return { pipeline }
+    return { pipeline: pipeline.slice(0, 5) }
   } catch {
     return { pipeline: [] }
   }
@@ -1002,6 +1001,81 @@ function deriveOverallStatus(tier1: Tier1Result, tier2: Tier2Result, tier3: Tier
   if (tier1.drugs.length > 0 || tier2.trials.length > 0) return 'PARTIALLY_ACTIONABLE'
   if (tier3.pipeline.length > 0) return 'INVESTIGATIONAL_ONLY'
   return 'NOT_ACTIONABLE'
+}
+
+// ─── Specialist recommendation by gene ───────────────────────────────────────
+const GENE_SPECIALIST: Record<string, string> = {
+  CFTR:   'pulmonologist',
+  DMD:    'neurologist or neuromuscular specialist',
+  SOD1:   'neurologist',
+  SMN1:   'neurologist or neuromuscular specialist',
+  HTT:    'neurologist',
+  FXN:    'neurologist',
+  GBA:    'neurologist or hematologist',
+  TTR:    'cardiologist or neurologist',
+  MYBPC3: 'cardiologist', MYH7: 'cardiologist', KCNQ1: 'cardiologist', KCNH2: 'cardiologist',
+  SCN5A:  'cardiologist', LMNA: 'cardiologist', PKP2: 'cardiologist',
+  BRCA1:  'oncologist and genetic counselor', BRCA2: 'oncologist and genetic counselor',
+  MLH1:   'oncologist and genetic counselor', MSH2:  'oncologist and genetic counselor',
+  MSH6:   'oncologist and genetic counselor', PMS2:  'oncologist and genetic counselor',
+  TP53:   'oncologist and genetic counselor', PALB2: 'oncologist and genetic counselor',
+  ATM:    'oncologist and genetic counselor', CHEK2: 'oncologist and genetic counselor',
+  HBB:    'hematologist', F8: 'hematologist', F9: 'hematologist',
+  LDLR:   'cardiologist or lipid specialist', PCSK9: 'cardiologist or lipid specialist',
+  NF1:    'neurologist or oncologist', VHL: 'oncologist', RET: 'endocrinologist or oncologist',
+  PTEN:   'oncologist and genetic counselor', APC:  'gastroenterologist and genetic counselor',
+  CDH1:   'gastroenterologist and genetic counselor',
+  PKD1:   'nephrologist', PKD2: 'nephrologist',
+  ATP7B:  'hepatologist or neurologist',
+  APOE:   'neurologist or genetic counselor',
+  GAA:    'metabolic disease specialist',
+  HFE:    'hepatologist',
+}
+
+function buildActionPlan(
+  gene: string,
+  tier1: Tier1Result,
+  tier2: Tier2Result,
+  tier3: Tier3Result,
+): ActionPlan {
+  void tier3 // reserved for future red-status nuance
+  const fdaDrug = tier1.drugs.find(d => d.fda_approved)
+  const bestTrial = tier2.trials[0]
+  const specialist = GENE_SPECIALIST[gene.toUpperCase()] || 'genetic counselor'
+
+  const treatmentBullet: ActionBullet = fdaDrug
+    ? {
+        label: 'Treatment',
+        text: `${fdaDrug.drug_name} is FDA-approved for this ${gene} variant.`,
+        tier_anchor: 'tier1',
+      }
+    : {
+        label: 'Treatment',
+        text: `No FDA-approved therapy is currently matched to your ${gene} variant.`,
+        tier_anchor: 'tier1',
+      }
+
+  const trialBullet: ActionBullet = bestTrial
+    ? {
+        label: 'Clinical Trial',
+        text: `A recruiting trial is available${bestTrial.phase ? ` (${bestTrial.phase})` : ''}: \u201c${bestTrial.title.length > 90 ? bestTrial.title.slice(0, 90) + '\u2026' : bestTrial.title}\u201d Bring this to your next appointment.`,
+        tier_anchor: 'tier2',
+        url: bestTrial.url,
+      }
+    : {
+        label: 'Clinical Trial',
+        text: `No interventional trials found for ${gene} right now. Check ClinicalTrials.gov as new studies open regularly.`,
+        tier_anchor: 'tier2',
+        url: `https://clinicaltrials.gov/search?term=${encodeURIComponent(gene)}&status=RECRUITING&studyType=INTERVENTIONAL`,
+      }
+
+  const specialistBullet: ActionBullet = {
+    label: 'Next Step',
+    text: `Talk to a ${specialist} about your ${gene} variant. A genetic counselor can also help interpret your results and guide next steps.`,
+  }
+
+  const status: ActionPlan['status'] = fdaDrug ? 'green' : bestTrial ? 'amber' : 'red'
+  return { status, bullets: [treatmentBullet, trialBullet, specialistBullet] }
 }
 
 // ─── Static file upload: VCF client-side parser, PDF unsupported ─────────────
@@ -1132,9 +1206,17 @@ export async function staticAnalyze(
       overall_status: 'NOT_ACTIONABLE',
       tier0: { classification: 'Unknown significance', confidence: 'LOW', review_stars: 0, review_status: 'No data', gnomad_af: null, gnomad_interpretation: 'Allele frequency not available', gnomad_url: null, clinvar_id: null, clingen_note: null },
       tier1: { drugs: [], surveillance: [] },
-      tier2: { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0 },
+      tier2: { trials: [], total_fetched: 0, total_after_scoring: 0, total_ineligible: 0, total_eligible: 0 },
       tier3: { pipeline: [] },
       enrichment: undefined,
+      action_plan: {
+        status: 'red',
+        bullets: [
+          { label: 'Treatment', text: 'Variant could not be recognized — enter a valid gene/variant to check therapies.', tier_anchor: 'tier1' },
+          { label: 'Clinical Trial', text: 'Enter a valid variant to search for recruiting trials.', tier_anchor: 'tier2' },
+          { label: 'Next Step', text: 'Consult a genetic counselor to interpret your genetic report.' },
+        ],
+      },
       patient_summary: 'The gene or variant could not be recognized. Please check the spelling or try a different format (e.g. HGVS notation, gene symbol, or common name like F508del).',
       patient_next_steps: ['Try entering your gene symbol directly (e.g. CFTR, BRCA2).', 'Use HGVS notation like c.1521_1523del for best results.'],
       clinician_notes: ['Gene normalization failed — UNKNOWN returned.'],
@@ -1151,6 +1233,7 @@ export async function staticAnalyze(
   const tier3 = await fetchTier3(gene, tier2NctIds)
 
   const overallStatus = deriveOverallStatus(tier1, tier2, tier3)
+  const action_plan = buildActionPlan(gene, tier1, tier2, tier3)
 
   const fdaDrugs = tier1.drugs.filter(d => d.fda_approved).map(d => d.drug_name)
   const patientSummary = fdaDrugs.length > 0
@@ -1173,6 +1256,7 @@ export async function staticAnalyze(
     tier2,
     tier3,
     enrichment: undefined,
+    action_plan,
     patient_summary: patientSummary,
     patient_next_steps: [
       'Share these results with your physician or genetic counselor.',

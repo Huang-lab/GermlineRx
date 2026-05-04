@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { AnalyzeResponse, EnrichmentResult } from '../../types'
+import type { AnalyzeResponse, EnrichmentResult, ActionPlan } from '../../types'
 import ConfidenceBadge from './ConfidenceBadge'
 import TrialCard from './TrialCard'
 
@@ -29,12 +29,55 @@ function isDrugLinkable(drugName: string): boolean {
   return !NON_DRUG_TERMS.some(term => lower.includes(term))
 }
 
+const UNCERTAIN_CLASSIFICATIONS = ['uncertain', 'benign', 'likely benign', 'vus']
+function isUncertainClassification(classification: string): boolean {
+  const lower = classification.toLowerCase()
+  return UNCERTAIN_CLASSIFICATIONS.some(t => lower.includes(t))
+}
+
+function ActionPlanCard({ plan, gene }: { plan: ActionPlan; gene: string }) {
+  const config = {
+    green: { bg: 'bg-green-50 border-green-300',  icon: '🟢', label: 'FDA-Approved Treatment Available' },
+    amber: { bg: 'bg-amber-50 border-amber-300',  icon: '🟡', label: 'Clinical Trials Available' },
+    red:   { bg: 'bg-red-50 border-red-200',       icon: '🔴', label: 'No Matched Therapy Found' },
+  }[plan.status]
+  return (
+    <div className={`rounded-xl border-2 p-4 ${config.bg}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-base">{config.icon}</span>
+        <h3 className="font-bold text-gray-900 text-sm tracking-wide">{config.label} — {gene}</h3>
+      </div>
+      <ol className="space-y-2.5">
+        {plan.bullets.map((b, i) => (
+          <li key={i} className="flex gap-3">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest w-24 shrink-0 pt-0.5">{b.label}</span>
+            <span className="text-sm text-gray-800 leading-relaxed">
+              {b.text}
+              {b.url && (
+                <a href={b.url} target="_blank" rel="noopener noreferrer"
+                   className="ml-1 text-brand-600 hover:underline text-xs">
+                  View ↗
+                </a>
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 export default function ResultsPanel({ data, onReset }: Props) {
   const [view, setView] = useState<'patient' | 'clinician'>('patient')
   const status = STATUS_STYLES[data.overall_status] || STATUS_STYLES.NOT_ACTIONABLE
 
   return (
     <div className="space-y-6">
+      {/* Action Plan — always first */}
+      {data.action_plan && (
+        <ActionPlanCard plan={data.action_plan} gene={data.gene} />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -157,8 +200,25 @@ export default function ResultsPanel({ data, onReset }: Props) {
 
       {/* Tier 1 — Approved Therapies */}
       <TierSection title="FDA-Approved Therapies" icon="💊" count={data.tier1.drugs.length}>
+        {/* Pathogenicity gate warning */}
+        {data.tier1.drugs.length > 0 && isUncertainClassification(data.tier0.classification) && (
+          <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+            ⚠ Your variant is classified as <strong>{data.tier0.classification}</strong>.
+            Therapies shown are associated with the <strong>{data.gene}</strong> gene broadly —
+            confirm with a genetic counselor whether they apply to your specific variant.
+          </div>
+        )}
         {data.tier1.drugs.length === 0 ? (
-          <p className="text-sm text-gray-500">No FDA-approved therapies matched for this variant.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500">No curated FDA therapy data exists for this variant.</p>
+            <a
+              href={`https://platform.opentargets.org/search?q=${encodeURIComponent(data.gene)}&entityNames=target`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center text-xs text-brand-600 hover:underline"
+            >
+              Explore gene-level drug associations on OpenTargets ↗
+            </a>
+          </div>
         ) : (
           <div className="space-y-3">
             {data.tier1.drugs.map((drug, i) => {
@@ -247,6 +307,14 @@ export default function ResultsPanel({ data, onReset }: Props) {
           <p className="text-xs text-gray-400 mt-2">
             {data.tier2.total_ineligible} additional trial{data.tier2.total_ineligible === 1 ? '' : 's'} not shown — age or sex outside eligibility range.
           </p>
+        )}
+        {data.tier2.see_more_url && (data.tier2.total_eligible ?? 0) > 5 && (
+          <div className="mt-3 text-center">
+            <a href={data.tier2.see_more_url} target="_blank" rel="noopener noreferrer"
+               className="text-xs text-brand-600 hover:underline">
+              See {(data.tier2.total_eligible ?? 0) - 5} more interventional trial{((data.tier2.total_eligible ?? 0) - 5) === 1 ? '' : 's'} on ClinicalTrials.gov ↗
+            </a>
+          </div>
         )}
       </TierSection>
 

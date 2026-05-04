@@ -72,6 +72,8 @@ export interface Tier2Result {
   total_fetched: number
   total_after_scoring: number
   total_ineligible?: number
+  total_eligible?: number
+  see_more_url?: string
 }
 
 export interface PipelineEntry {
@@ -135,6 +137,18 @@ export interface EnrichmentResult {
   orphan: OrphanInfo
 }
 
+export interface ActionBullet {
+  label: string
+  text: string
+  tier_anchor?: string
+  url?: string
+}
+
+export interface ActionPlan {
+  status: 'green' | 'amber' | 'red'
+  bullets: ActionBullet[]
+}
+
 export interface AnalyzeResponse {
   patient_label: string
   gene: string
@@ -147,6 +161,7 @@ export interface AnalyzeResponse {
   tier2: Tier2Result
   tier3: Tier3Result
   enrichment?: EnrichmentResult
+  action_plan?: ActionPlan
   patient_summary: string
   patient_next_steps: string[]
   clinician_notes: string[]
