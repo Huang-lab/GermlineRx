@@ -35,6 +35,74 @@ function isUncertainClassification(classification: string): boolean {
   return UNCERTAIN_CLASSIFICATIONS.some(t => lower.includes(t))
 }
 
+// ─── ClinVar pathogenicity badge ────────────────────────────────────────────────────
+function ClinVarBadge({ classification, clinvarId }: { classification: string; clinvarId: string | null }) {
+  const lower = classification.toLowerCase()
+  let cls = 'bg-gray-100 border-gray-300 text-gray-600'
+  let icon = '❓'
+  if (lower.includes('pathogenic') && !lower.includes('likely') && !lower.includes('benign')) {
+    cls = 'bg-red-100 border-red-300 text-red-700'; icon = '⚠️'
+  } else if (lower.includes('likely pathogenic')) {
+    cls = 'bg-orange-100 border-orange-300 text-orange-700'; icon = '⚠️'
+  } else if (lower.includes('uncertain') || lower.includes('vus') || lower.includes('conflicting')) {
+    cls = 'bg-yellow-100 border-yellow-300 text-yellow-700'; icon = '⚠️'
+  } else if (lower.includes('likely benign')) {
+    cls = 'bg-blue-100 border-blue-300 text-blue-700'; icon = '✅'
+  } else if (lower.includes('benign')) {
+    cls = 'bg-green-100 border-green-300 text-green-700'; icon = '✅'
+  }
+  const badge = (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${cls}`}>
+      <span>{icon}</span>
+      <span>ClinVar: {classification}</span>
+    </span>
+  )
+  if (clinvarId) {
+    return (
+      <a
+        href={`https://www.ncbi.nlm.nih.gov/clinvar/variation/${clinvarId}`}
+        target="_blank" rel="noopener noreferrer"
+        className="hover:opacity-80 transition-opacity"
+        title={`ClinVar variation ${clinvarId}`}
+      >
+        {badge}
+      </a>
+    )
+  }
+  return badge
+}
+
+// ─── gnomAD allele frequency badge ─────────────────────────────────────────────────
+function GnomADBadge({ af, url }: { af: number | null; url?: string | null }) {
+  let label: string
+  let cls: string
+  if (af === null) {
+    label = 'AF: Not in gnomAD'; cls = 'bg-gray-100 border-gray-300 text-gray-500'
+  } else if (af > 0.01) {
+    label = `AF: ${af.toFixed(4)} — Common`; cls = 'bg-green-100 border-green-300 text-green-700'
+  } else if (af > 0.001) {
+    label = `AF: ${af.toFixed(5)} — Rare`; cls = 'bg-blue-100 border-blue-300 text-blue-700'
+  } else if (af > 0.0001) {
+    label = `AF: ${af.toFixed(6)} — Very Rare`; cls = 'bg-orange-100 border-orange-300 text-orange-700'
+  } else {
+    label = `AF: ${af.toExponential(2)} — Ultra-Rare`; cls = 'bg-red-100 border-red-300 text-red-700'
+  }
+  const badge = (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${cls}`}>
+      <span>gnomAD {label}</span>
+    </span>
+  )
+  if (url) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer"
+         className="hover:opacity-80 transition-opacity" title="View on gnomAD">
+        {badge} <span className="text-xs text-brand-500">↗</span>
+      </a>
+    )
+  }
+  return badge
+}
+
 function ActionPlanCard({ plan, gene }: { plan: ActionPlan; gene: string }) {
   const config = {
     green: { bg: 'bg-green-50 border-green-300',  icon: '🟢', label: 'FDA-Approved Treatment Available' },
@@ -152,7 +220,14 @@ export default function ResultsPanel({ data, onReset }: Props) {
           </p>
         )}
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <InfoRow label="Classification" value={data.tier0.classification} />
+          {/* ClinVar + gnomAD badges span full width */}
+          <div className="col-span-2 flex items-center gap-2 flex-wrap">
+            <ClinVarBadge
+              classification={data.tier0.classification}
+              clinvarId={data.tier0.clinvar_id}
+            />
+            <GnomADBadge af={data.tier0.gnomad_af} url={data.tier0.gnomad_url} />
+          </div>
           {data.hgvs !== 'unknown' && (
             <InfoRow label="Evidence" value={
               <span title={data.tier0.review_status}>
@@ -161,24 +236,6 @@ export default function ResultsPanel({ data, onReset }: Props) {
                 ))}
                 <span className="text-xs text-gray-400 ml-1">({data.tier0.review_status})</span>
               </span>
-            } />
-          )}
-          {data.tier0.gnomad_af !== null && (
-            <InfoRow label="gnomAD AF" value={
-              data.tier0.gnomad_url
-                ? <a href={data.tier0.gnomad_url} target="_blank" rel="noopener noreferrer"
-                     className="text-brand-600 hover:underline">
-                    {data.tier0.gnomad_af.toFixed(4)} ↗
-                  </a>
-                : data.tier0.gnomad_af.toFixed(4)
-            } />
-          )}
-          {data.tier0.gnomad_af === null && data.tier0.gnomad_url && (
-            <InfoRow label="gnomAD" value={
-              <a href={data.tier0.gnomad_url} target="_blank" rel="noopener noreferrer"
-                 className="text-brand-600 hover:underline">
-                View on gnomAD ↗
-              </a>
             } />
           )}
           {data.tier0.clinvar_id && (

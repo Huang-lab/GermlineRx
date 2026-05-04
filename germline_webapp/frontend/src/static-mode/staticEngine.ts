@@ -14,6 +14,25 @@
 import { GENE_TO_ENSEMBL } from './geneToEnsembl'
 import { hasGeneInVariantDrugKB, lookupVariantDrugKB, lookupSurveillanceKB } from './variantDrugKB'
 
+// ─── CORS-resilient fetch: tries direct, falls back to /api/proxy ─────────────
+async function fetchWithCORSFallback(url: string, options?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, options)
+  } catch {
+    // Direct fetch failed (likely CORS). Retry via the Vercel edge proxy.
+    return fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        method: options?.method || 'GET',
+        body: options?.body != null ? JSON.parse(options.body as string) : undefined,
+        headers: (options?.headers as Record<string, string>) || {},
+      }),
+    })
+  }
+}
+
 import type {
   NormalizeResponse,
   AnalyzeResponse,
@@ -588,6 +607,57 @@ async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
   }
 }
 
+// ─── FDA OpenFDA drug label search ──────────────────────────────────────────
+
+async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
+  try {
+    const q = encodeURIComponent(`"${gene} mutation"`)
+    const url = `https://api.fda.gov/drug/label.json?search=indications_and_usage:${q}&limit=5`
+    const res = await fetchWithCORSFallback(url, { signal: AbortSignal.timeout(8000) })
+    if (!res.ok) return []
+    const json = await res.json()
+    const results: Array<{
+      openfda?: { brand_name?: string[]; generic_name?: string[] }
+      indications_and_usage?: string[]
+    }> = json?.results || []
+
+    const seen = new Set<string>()
+    const drugs: DrugEntry[] = []
+
+    for (const result of results) {
+      const brandNames = result?.openfda?.brand_name || []
+      const genericNames = result?.openfda?.generic_name || []
+      const rawIndication = (result?.indications_and_usage || []).join(' ')
+      // Trim to a sentence or 300 chars, whichever comes first
+      const periodIdx = rawIndication.indexOf('.')
+      const action = rawIndication.slice(0, periodIdx > 30 ? periodIdx + 1 : 300).trim()
+
+      const rawName = brandNames[0] || genericNames[0] || ''
+      if (!rawName) continue
+      const drugName = brandNames[0]
+        ? `${brandNames[0]}${genericNames[0] ? ` (${genericNames[0].toLowerCase()})` : ''}`
+        : genericNames[0]
+      const key = drugName.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      drugs.push({
+        drug_name: titleCaseDrug(drugName),
+        action: action || `FDA-labeled therapy referencing ${gene} mutation`,
+        fda_approved: true,
+        approval_year: null,
+        evidence_level: 'FDA_approved',
+        line: null,
+        caveat: `FDA drug label references ${gene} mutation in indications. Confirm clinical applicability with your physician.`,
+        source: 'FDA Drug Label (OpenFDA)',
+      })
+    }
+    return drugs
+  } catch {
+    return []
+  }
+}
+
 async function fetchTier1(gene: string, functionalClass: string | null): Promise<Tier1Result> {
   const kbDrugs = lookupVariantDrugKB(gene, functionalClass)
   const kbSurveillance = lookupSurveillanceKB(gene)
@@ -603,9 +673,9 @@ async function fetchTier1(gene: string, functionalClass: string | null): Promise
     return { drugs: [], surveillance: kbSurveillance }
   }
 
-  // No API fallback — curated KB only ensures drug-variant accuracy.
-  // For gene-level exploration, see the OpenTargets link in the UI.
-  return { drugs: [], surveillance: kbSurveillance }
+  // Gene not in curated KB — try FDA drug label search as last resort.
+  const fdaDrugs = await fetchFDADrugLabels(gene)
+  return { drugs: fdaDrugs, surveillance: kbSurveillance }
 }
 
 // ─── Gene-specific search terms (shared by Tier 2 and Tier 3) ────────────────
@@ -867,32 +937,57 @@ function filterRelevantStudies(studies: RawStudy[], gene: string): RawStudy[] {
   })
 }
 
-async function fetchTier2(gene: string, disease: string, age: number | null, sex?: string | null): Promise<Tier2Result> {
+async function fetchCTStudies(queryTerm: string, status: string, pageSize = 15): Promise<RawStudy[]> {
+  const query = encodeURIComponent(queryTerm)
+  const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=${status}&filter.studyType=INTERVENTIONAL&pageSize=${pageSize}&format=json`
+  const res = await fetch(url)
+  const json = await res.json()
+  return (json?.studies || []) as RawStudy[]
+}
+
+async function fetchTier2(gene: string, hgvs: string, disease: string, age: number | null, sex?: string | null): Promise<Tier2Result> {
   try {
     const geneUpper = gene.toUpperCase()
-    const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
 
     const allStudies: RawStudy[] = []
     const seenNct = new Set<string>()
 
-    const fetches = terms.map(async (term) => {
-      const query = encodeURIComponent(term)
-      const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=RECRUITING&filter.studyType=INTERVENTIONAL&pageSize=15&format=json`
-      const res = await fetch(url)
-      const json = await res.json()
-      return (json?.studies || []) as RawStudy[]
-    })
+    const addStudies = (batch: RawStudy[]) => {
+      for (const study of batch) {
+        const nctId = study.protocolSection?.identificationModule?.nctId
+        if (nctId && !seenNct.has(nctId)) { seenNct.add(nctId); allStudies.push(study) }
+      }
+    }
 
+    // Step 1 — variant-specific search (HGVS must be meaningful)
+    const hasVariant = hgvs && hgvs !== 'unknown' && !hgvs.startsWith('del_')
+    let variantHits: RawStudy[] = []
+    if (hasVariant) {
+      try {
+        variantHits = await fetchCTStudies(`${geneUpper} ${hgvs}`, 'RECRUITING', 10)
+      } catch { /* fall through */ }
+    }
+
+    if (variantHits.length > 0) {
+      // Variant-specific search succeeded — also add gene-level terms for breadth
+      addStudies(variantHits)
+    }
+
+    // Step 2 — gene-level search using curated disease terms
+    const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
+    const fetches = terms.map(term => fetchCTStudies(term, 'RECRUITING', 15).catch(() => [] as RawStudy[]))
     const results = await Promise.allSettled(fetches)
     for (const r of results) {
       if (r.status !== 'fulfilled') continue
-      for (const study of r.value) {
-        const nctId = study.protocolSection?.identificationModule?.nctId
-        if (nctId && !seenNct.has(nctId)) {
-          seenNct.add(nctId)
-          allStudies.push(study)
-        }
-      }
+      addStudies(r.value)
+    }
+
+    // Step 3 — gene-only fallback if nothing found yet
+    if (allStudies.length === 0) {
+      try {
+        const fallback = await fetchCTStudies(geneUpper, 'RECRUITING', 20)
+        addStudies(fallback)
+      } catch { /* give up gracefully */ }
     }
 
     const relevant = filterRelevantStudies(allStudies, gene)
@@ -1226,7 +1321,7 @@ export async function staticAnalyze(
   const [tier0, tier1, tier2] = await Promise.all([
     fetchTier0(gene, hgvs),
     fetchTier1(gene, functionalClass),
-    fetchTier2(gene, disease, age, sex),
+    fetchTier2(gene, hgvs, disease, age, sex),
   ])
 
   const tier2NctIds = new Set(tier2.trials.map(t => t.nct_id))
