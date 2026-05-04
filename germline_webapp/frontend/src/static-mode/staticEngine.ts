@@ -607,15 +607,30 @@ async function fetchTier1DGIdb(gene: string): Promise<DrugEntry[]> {
 
 async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
   try {
-    const q = encodeURIComponent(`"${gene} mutation"`)
-    const url = `https://api.fda.gov/drug/label.json?search=indications_and_usage:${q}&limit=5`
-    const res = await fetchWithCORSFallback(url, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) return []
-    const json = await res.json()
+    const queries = [
+      `indications_and_usage:${encodeURIComponent(`${gene} mutation`)}`,
+      `indications_and_usage:${encodeURIComponent(gene)}`,
+      `clinical_pharmacology:${encodeURIComponent(gene)}`,
+    ]
+
     const results: Array<{
       openfda?: { brand_name?: string[]; generic_name?: string[] }
       indications_and_usage?: string[]
-    }> = json?.results || []
+      clinical_pharmacology?: string[]
+    }> = []
+
+    for (const q of queries) {
+      const url = `https://api.fda.gov/drug/label.json?search=${q}&limit=20`
+      try {
+        const res = await fetchWithCORSFallback(url, { signal: AbortSignal.timeout(8000) })
+        if (!res.ok) continue
+        const json = await res.json()
+        const batch = json?.results || []
+        results.push(...batch)
+      } catch {
+        // Continue with other query variants.
+      }
+    }
 
     const seen = new Set<string>()
     const drugs: DrugEntry[] = []
@@ -623,7 +638,10 @@ async function fetchFDADrugLabels(gene: string): Promise<DrugEntry[]> {
     for (const result of results) {
       const brandNames = result?.openfda?.brand_name || []
       const genericNames = result?.openfda?.generic_name || []
-      const rawIndication = (result?.indications_and_usage || []).join(' ')
+      const rawIndication = [
+        ...(result?.indications_and_usage || []),
+        ...(result?.clinical_pharmacology || []),
+      ].join(' ')
       // Trim to a sentence or 300 chars, whichever comes first
       const periodIdx = rawIndication.indexOf('.')
       const action = rawIndication.slice(0, periodIdx > 30 ? periodIdx + 1 : 300).trim()
@@ -670,7 +688,7 @@ async function fetchTier1(gene: string, functionalClass: string | null): Promise
     merged.push(drug)
   }
   if (merged.length > 0) {
-    return { drugs: merged, surveillance: kbSurveillance }
+    return { drugs: merged.slice(0, 10), surveillance: kbSurveillance }
   }
 
   // No FDA-labeled or curated FDA therapy found.
@@ -798,7 +816,7 @@ type RawStudy = {
   protocolSection?: {
     identificationModule?: { nctId?: string; briefTitle?: string }
     statusModule?: { overallStatus?: string }
-    designModule?: { phases?: string[] }
+    designModule?: { phases?: string[]; studyType?: string }
     conditionsModule?: { conditions?: string[] }
     armsInterventionsModule?: { interventions?: Array<{ name?: string }> }
     eligibilityModule?: { eligibilityCriteria?: string; minimumAge?: string; maximumAge?: string; sex?: string; healthyVolunteers?: boolean; stdAges?: string[] }
@@ -941,11 +959,16 @@ function filterRelevantStudies(studies: RawStudy[], gene: string): RawStudy[] {
 
 async function fetchCTStudies(queryTerm: string, status: string, pageSize = 15): Promise<RawStudy[]> {
   const query = encodeURIComponent(queryTerm)
-  const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=${status}&filter.studyType=INTERVENTIONAL&pageSize=${pageSize}&format=json`
+  const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${query}&filter.overallStatus=${status}&pageSize=${pageSize}&format=json`
   const res = await fetchWithCORSFallback(url)
   if (!res.ok) return []
   const json = await res.json()
   return (json?.studies || []) as RawStudy[]
+}
+
+function isInterventionalStudy(study: RawStudy): boolean {
+  const studyType = study.protocolSection?.designModule?.studyType || ''
+  return studyType.toUpperCase() === 'INTERVENTIONAL'
 }
 
 async function fetchTier2(gene: string, hgvs: string, disease: string, age: number | null, sex?: string | null): Promise<Tier2Result> {
@@ -957,6 +980,7 @@ async function fetchTier2(gene: string, hgvs: string, disease: string, age: numb
 
     const addStudies = (batch: RawStudy[]) => {
       for (const study of batch) {
+        if (!isInterventionalStudy(study)) continue
         const nctId = study.protocolSection?.identificationModule?.nctId
         if (nctId && !seenNct.has(nctId)) { seenNct.add(nctId); allStudies.push(study) }
       }
@@ -978,7 +1002,13 @@ async function fetchTier2(gene: string, hgvs: string, disease: string, age: numb
 
     // Step 2 — gene-level search using curated disease terms
     const terms = SEARCH_TERMS[geneUpper] || [`${gene} genetic disease`]
-    const fetches = terms.map(term => fetchCTStudies(term, 'RECRUITING', 15).catch(() => [] as RawStudy[]))
+    const diseaseTerm = disease.trim().replace(/[()]/g, ' ').replace(/\s+/g, ' ')
+    if (diseaseTerm.length >= 4) {
+      terms.push(`${geneUpper} ${diseaseTerm}`)
+      terms.push(diseaseTerm)
+    }
+    const uniqueTerms = Array.from(new Set(terms))
+    const fetches = uniqueTerms.map(term => fetchCTStudies(term, 'RECRUITING', 15).catch(() => [] as RawStudy[]))
     const results = await Promise.allSettled(fetches)
     for (const r of results) {
       if (r.status !== 'fulfilled') continue

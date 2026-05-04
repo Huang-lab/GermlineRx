@@ -1,6 +1,6 @@
 # GermlineRx: A Patient-Facing Germline Variant Therapy & Trial Matcher
 
-GermlineRx translates a germline genetic variant into actionable clinical intelligence — FDA-approved therapies, recruiting clinical trials, emerging pipeline programs, and deep biomedical enrichment — in seconds.
+GermlineRx translates a germline genetic variant into actionable clinical intelligence in three outputs: variant interpretation, FDA-approved therapies, and recruiting clinical trials.
 
 | Deployment | URL | Mode |
 |------------|-----|------|
@@ -26,27 +26,15 @@ Enter any variant in any format — `CFTR F508del`, `BRCA2 c.5946del`, `HBB HbS`
 - Supports HGVS, protein notation, common names, rsIDs, and exon deletions
 
 **Tier 1 — FDA-Approved Therapies**
-- Curated knowledge base covering 50+ genes and 100+ FDA-approved therapy entries
-- Matched to variant functional class (e.g. F508del, gating mutation, nonsense, sickle cell)
-- Includes drug name, approval year, indication line, caveats, and FDA source
+- OpenFDA drug labels (live) plus curated FDA fallback entries
+- Matched to gene/variant context and deduplicated in the UI
+- Includes drug name, approval details, caveats, and FDA/OpenFDA source links
 
 **Tier 2 — Recruiting Clinical Trials**
 - Live query to ClinicalTrials.gov v2 API
-- Age-filtered eligibility checking with plain-language explanations
+- Eligibility pre-screening (age/sex/criteria) with plain-language explanations
 - Direct links to trial pages and contact information
-
-**Tier 3 — Emerging Pipeline**
-- CRISPR, ASO, mRNA, gene therapy, and RNAi programs in active development
-- Stage-annotated (Preclinical → Phase 3) with key programs and caveats
-
-**Enrichment (full mode only)**
-- OMIM gene-phenotype associations
-- DisGeNET gene-disease scores
-- GWAS catalog trait associations
-- Broad Repurposing Hub drug candidates
-- Drug-drug interaction flags (DDInter)
-- BioGRID protein-protein interactions
-- Orphan disease and orphan drug mapping
+- Returns top 10 ranked recruiting interventional studies
 
 ---
 
@@ -126,12 +114,12 @@ GermlineRx/
 ### Vercel (static, recommended)
 Auto-deploys on every push to `main`. Live at **https://germline-rx.vercel.app**
 
-All tiers use live APIs — no Python, no JSON files, no pre-build step. Tier 0 calls ClinVar + gnomAD (via a Vercel serverless proxy to avoid CORS), Tier 1 calls DGIdb, Tier 2/3 call ClinicalTrials.gov. Enrichment not available.
+The app runs fully in-browser with live APIs and no backend requirement for deployment. Tier 0 uses ClinVar + gnomAD (MyVariant.info first, then fallback), Tier 1 uses OpenFDA + curated FDA fallback, Tier 2 uses ClinicalTrials.gov v2.
 
 ### GitHub Pages (static)
 Auto-deploys on every push to `main`. Live at **https://huang-lab.github.io/GermlineRx**
 
-Same browser-only engine as Vercel. Note: gnomAD variant-level AF requires the Vercel serverless proxy (`/api/gnomad`) — on GitHub Pages it falls back to curated values. Enrichment not available.
+Same browser-only engine as Vercel. Trial and therapy outputs are fully live from ClinicalTrials.gov and OpenFDA.
 
 ### HuggingFace Spaces (full stack)
 Full backend served via Docker at **https://Rita9CoreX-germline-rx.hf.space**
