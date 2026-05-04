@@ -11,6 +11,7 @@
 
 import { GENE_TO_ENSEMBL } from './geneToEnsembl'
 import { hasGeneInVariantDrugKB, lookupVariantDrugKB, lookupSurveillanceKB } from './variantDrugKB'
+import { parsePdf } from './staticPdfParser'
 
 // ─── CORS-resilient fetch: tries direct, falls back to /api/proxy ─────────────
 async function fetchWithCORSFallback(url: string, options?: RequestInit): Promise<Response> {
@@ -1163,7 +1164,6 @@ export async function staticUploadFile(file: File): Promise<UploadResponse> {
   const name = file.name.toLowerCase()
 
   if (name.endsWith('.pdf')) {
-    const { parsePdf } = await import('./staticPdfParser')
     return parsePdf(file)
   }
 
