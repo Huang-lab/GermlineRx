@@ -176,7 +176,7 @@ export default function App() {
               <div className="flex flex-wrap justify-center gap-2">
                 {[
                   { label: '🫁 CFTR F508del', sublabel: 'CF · ♂ age 24', gene: 'CFTR', hgvs: 'c.1521_1523del', disease: 'Cystic Fibrosis (CFTR)', age: 24, fc: 'f508del', sex: 'MALE' as const },
-                  { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · ♂ age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: null, sex: 'MALE' as const },
+                  { label: '💪 DMD Exon 50 del', sublabel: 'Duchenne MD · ♂ age 12', gene: 'DMD', hgvs: 'c.6439-?_6912+?del', disease: 'Duchenne Muscular Dystrophy (DMD)', age: 12, fc: 'exon51_skippable', sex: 'MALE' as const },
                   { label: '🧠 SOD1 A4V', sublabel: 'ALS · age 52', gene: 'SOD1', hgvs: 'c.14C>T', disease: 'ALS — SOD1', age: 52, fc: 'sod1_als', sex: null },
                   { label: '❤️ TTR V30M', sublabel: 'Amyloidosis · age 45', gene: 'TTR', hgvs: 'c.148G>A', disease: 'TTR Amyloidosis', age: 45, fc: null, sex: null },
                   { label: '🎗️ BRCA2 c.5946del', sublabel: 'Hereditary Cancer · ♀ age 35', gene: 'BRCA2', hgvs: 'c.5946del', disease: 'Hereditary Breast/Ovarian Cancer', age: 35, fc: null, sex: 'FEMALE' as const },

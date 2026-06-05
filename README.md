@@ -1,160 +1,132 @@
-# GermlineRx: A Patient-Facing Germline Variant Therapy & Trial Matcher
+# GermlineRx: Germline Variant Therapy & Trial Matcher
 
-GermlineRx translates a germline genetic variant into actionable clinical intelligence in three outputs: variant interpretation, FDA-approved therapies, and recruiting clinical trials.
+GermlineRx translates a germline genetic variant into actionable clinical intelligence — variant interpretation, FDA-approved therapies, and recruiting clinical trials — entirely in the browser, with no backend server required.
 
-| Deployment | URL | Mode |
-|------------|-----|------|
-| Vercel (static) | [germline-rx.vercel.app](https://germline-rx.vercel.app) | Browser-only, live APIs, auto-deploys on push |
+**Live:** [germline-rx.vercel.app](https://germline-rx.vercel.app) · Auto-deploys on every push to `main`
 
 ---
 
-## Overview
+## What It Does
 
-Most genomic variant tools are built for clinicians or bioinformaticians. GermlineRx is designed for patients and researchers who want to understand what a germline variant means for treatment options today and clinical opportunities tomorrow.
-
-Enter any variant in any format — `CFTR F508del`, `BRCA2 c.5946del`, `HBB HbS`, `APOE c.388T>C` — and GermlineRx returns a structured, tiered report.
-
----
-
-## Key Capabilities
+Enter a variant in any format — `CFTR F508del`, `BRCA2 c.5946del`, `HBB HbS`, `APOE4`, `SOD1 A4V` — and GermlineRx returns a structured, three-tier report in seconds.
 
 **Tier 0 — Variant Interpretation**
-- ClinVar pathogenicity classification with review star rating
-- gnomAD population allele frequency and rarity interpretation
-- Supports HGVS, protein notation, common names, rsIDs, and exon deletions
+- ClinVar pathogenicity classification (Pathogenic / VUS / Benign) with evidence star rating
+- gnomAD population allele frequency (how rare is this variant?)
+- Variant resolved via MyVariant.info first, then ClinVar direct lookup as fallback
 
 **Tier 1 — FDA-Approved Therapies**
-- OpenFDA drug labels (live) plus curated FDA fallback entries
-- Matched to gene/variant context and deduplicated in the UI
-- Includes drug name, approval details, caveats, and FDA/OpenFDA source links
+- Curated variant-matched drug knowledge base (50+ genes, 100+ entries with NDA/BLA numbers)
+- Supplemented by live OpenFDA drug label search for broader gene coverage
+- Each entry links to FDA Drugs@FDA for the full approval record
 
 **Tier 2 — Recruiting Clinical Trials**
-- Live query to ClinicalTrials.gov v2 API
-- Eligibility pre-screening (age/sex/criteria) with plain-language explanations
-- Direct links to trial pages and contact information
-- Returns top 10 ranked recruiting interventional studies
+- Live query to ClinicalTrials.gov v2 API — results are always current
+- Automatic eligibility pre-screening by age and sex
+- Top 10 ranked interventional trials with contact info and direct ClinicalTrials.gov links
 
 ---
 
-## Supported Genes (examples)
+## How It Works (Architecture)
 
-CFTR · DMD · SMN1 · SOD1 · HTT · TTR · HBB · BRCA1 · BRCA2 · MLH1 · MSH2 · LDLR · PCSK9 · APOE · GBA · F8 · F9 · RET · TP53 · PTEN · APC · VHL · NF1 · MYBPC3 · MYH7 · KCNQ1 · SCN5A · PKD1 · FBN1 · ATP7B · and 20+ more
+The app runs entirely in the browser — no Python server, no backend to maintain. Every query makes live API calls directly from the user's browser:
+
+```
+Browser (React + TypeScript)
+    │
+    ├── MyVariant.info          → gnomAD allele frequency + ClinVar variant ID
+    ├── NCBI E-utilities        → ClinVar pathogenicity classification
+    ├── OpenFDA                 → FDA drug label search (CORS fallback via /api/proxy)
+    └── ClinicalTrials.gov v2   → Recruiting trial search (CORS fallback via /api/proxy)
+
+Vercel serverless functions (api/)
+    ├── api/proxy.js            → CORS fallback proxy for OpenFDA + ClinicalTrials.gov
+    └── api/gnomad.js           → gnomAD GraphQL proxy (fallback if MyVariant misses AF)
+```
+
+All APIs are free and require no account or key.
 
 ---
 
-## Getting Started (Local)
+## Gene Coverage
 
-**Prerequisites:** Python 3.9+, Node 18+
+**Tier 0 and Tier 2 work for any gene** — ClinVar and ClinicalTrials.gov accept any gene symbol or HGVS notation.
+
+**Tier 1 FDA therapy matching** is most complete for genes with curated entries:
+
+CFTR · DMD · SMN1 · SOD1 · HTT · TTR · HBB · BRCA1 · BRCA2 · MLH1 · MSH2 · MSH6 · PMS2 · LDLR · PCSK9 · APOE · GBA · FXN · F8 · F9 · RET · TP53 · PTEN · NF1 · VHL · MYBPC3 · MYH7 · KCNQ1 · SCN5A · PKD1 · FBN1 · ATP7B · PKHD1 · PAH · GAA · SCN1A · GJB2 · and more
+
+For genes not in the curated list, OpenFDA drug label search provides broader fallback coverage.
+
+---
+
+## Demo Cases
+
+| Variant | Expected Result |
+|---------|----------------|
+| CFTR F508del | FULLY_ACTIONABLE — Trikafta (elexacaftor/tezacaftor/ivacaftor) |
+| DMD Exon 50 del | FULLY_ACTIONABLE — Eteplirsen (Exondys 51), Elevidys, Deflazacort |
+| SOD1 A4V | FULLY_ACTIONABLE — Tofersen (Qalsody) |
+| TTR V30M | FULLY_ACTIONABLE — Tafamidis (Vyndaqel), Patisiran (Onpattro) |
+| BRCA2 c.5946del | FULLY_ACTIONABLE — Olaparib (Lynparza), Niraparib |
+| HBB HbS | FULLY_ACTIONABLE — Casgevy, Lyfgenia, Hydroxyurea |
+| APOE4 | FULLY_ACTIONABLE — Lecanemab (Leqembi), Donanemab (Kisunla) |
+
+---
+
+## Running Locally
+
+**Prerequisites:** Node 18+
 
 ```bash
-# Clone
 git clone https://github.com/Huang-lab/GermlineRx.git
-cd GermlineRx
-
-# Backend
-cd germline_webapp/backend
-pip install -r requirements.txt
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-# Frontend (new terminal)
-cd germline_webapp/frontend
+cd GermlineRx/germline_webapp/frontend
 npm install
 npm run dev
 ```
 
 Open **http://localhost:5173**
 
----
-
-## External APIs
-
-All APIs are free and require no account or key.
-
-| API | Purpose | Key Required |
-|-----|---------|--------------|
-| ClinVar (NCBI E-utilities) | Variant pathogenicity | No (optional for higher rate limit) |
-| gnomAD GraphQL | Population allele frequency | No |
-| ClinicalTrials.gov v2 | Recruiting trial search | No |
+The dev server proxies `/api/*` to `localhost:8000` if a local Python backend is running, but the app is fully functional without it — all API calls fall through to the live external APIs.
 
 ---
 
 ## Project Structure
 
 ```
-GermlineRx/
-├── germline_webapp/
-│   ├── backend/                       # Local dev only — not deployed; not kept in sync with the static frontend
-│   │   ├── app/
-│   │   │   ├── api/routes.py          # POST /api/analyze, /normalize, /upload, GET /health
-│   │   │   ├── engine/
-│   │   │   │   ├── normalizer.py      # Free-text variant → canonical gene + HGVS
-│   │   │   │   ├── tier0.py           # ClinVar + gnomAD interpretation
-│   │   │   │   ├── tier1.py           # FDA-approved therapy KB
-│   │   │   │   ├── tier2.py           # ClinicalTrials.gov matching
-│   │   │   │   └── tier3.py           # Emerging pipeline KB
-│   │   │   ├── enrichment/datalake.py # Biomni datalake reader
-│   │   │   ├── models/schemas.py      # API request/response schemas
-│   │   │   └── parsers/               # PDF/VCF parsers
-│   │   └── requirements.txt
-│   └── frontend/
-│       ├── src/
-│       │   ├── App.tsx
-│       │   ├── components/            # Input + results UI
-│       │   └── static-mode/           # Browser-only analysis engine
-│       ├── api/
-│       │   ├── gnomad.js              # Vercel serverless gnomAD proxy
-│       │   └── proxy.js               # CORS fallback proxy
-│       ├── vite.config.ts
-│       └── vercel.json
-├── README.md
-└── LICENSE
+germline_webapp/frontend/
+├── src/
+│   ├── App.tsx                        # Main app shell, disclaimer modal, demo cases
+│   ├── components/
+│   │   ├── input/ManualEntry.tsx      # Variant + condition input, gene autocomplete
+│   │   └── results/ResultsPanel.tsx   # Three-tier results display
+│   └── static-mode/
+│       ├── staticEngine.ts            # Browser-only analysis engine (Tier 0/1/2)
+│       ├── variantDrugKB.ts           # Curated FDA drug + surveillance knowledge base
+│       ├── geneToEnsembl.ts           # Gene symbol → Ensembl ID mapping
+│       └── staticPdfParser.ts         # Client-side PDF genetic report parser
+├── api/
+│   ├── proxy.js                       # Vercel serverless CORS proxy (OpenFDA, CT.gov)
+│   └── gnomad.js                      # Vercel serverless gnomAD GraphQL proxy
+└── vercel.json
 ```
 
 ---
 
-## Hosting
+## External APIs Used
 
-### Vercel (static)
-Auto-deploys on every push to `main`. Live at **https://germline-rx.vercel.app**
-
-The app runs fully in-browser with live APIs and no backend requirement for deployment. Tier 0 uses ClinVar + gnomAD (MyVariant.info first, then fallback), Tier 1 uses OpenFDA + curated FDA fallback, Tier 2 uses ClinicalTrials.gov v2.
-
----
-
-## Configuration
-
-Copy `germline_webapp/backend/.env.example` to `.env`:
-
-```bash
-NCBI_API_KEY=your_key       # Optional — raises ClinVar limit from 3 to 10 req/s
-BIOMNI_DATA_PATH=/path/to/data_lake   # Required for enrichment features
-```
-
----
-
-## Example Queries
-
-```bash
-# CFTR F508del — expect: FULLY_ACTIONABLE, Trikafta
-curl -s -X POST http://localhost:8000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"variant":{"gene":"CFTR","hgvs":"c.1521_1523del","disease":"Cystic Fibrosis","age":24,"patient_label":"Test","functional_class":"f508del"}}'
-
-# HBB sickle cell — expect: FULLY_ACTIONABLE, Casgevy
-curl -s -X POST http://localhost:8000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"variant":{"gene":"HBB","hgvs":"c.20A>T","disease":"Sickle Cell Disease","age":35,"patient_label":"Test","functional_class":"sickle_cell"}}'
-
-# BRCA2 — expect: FULLY_ACTIONABLE, Olaparib
-curl -s -X POST http://localhost:8000/api/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"variant":{"gene":"BRCA2","hgvs":"p.Arg2336His","disease":"Hereditary Breast Cancer","age":25,"patient_label":"Test","functional_class":null}}'
-```
+| API | Purpose | CORS |
+|-----|---------|------|
+| MyVariant.info | gnomAD AF + ClinVar variant ID in one call | Open (direct) |
+| NCBI E-utilities (ClinVar) | Pathogenicity classification | Open (direct) |
+| OpenFDA | FDA drug label search | Via `/api/proxy` |
+| ClinicalTrials.gov v2 | Recruiting trial search | Via `/api/proxy` |
+| gnomAD GraphQL | Population AF fallback | Via `/api/gnomad` |
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE) for details.
 
-> **Disclaimer:** GermlineRx is for educational and research purposes only. It is not a substitute for advice from a qualified healthcare professional. Always consult a genetic counselor or physician before making any medical decisions.
+> **Disclaimer:** GermlineRx is for educational and research purposes only. It is not a substitute for advice from a qualified healthcare professional. Always consult a genetic counselor, physician, or specialist before making any medical decisions.

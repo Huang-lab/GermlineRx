@@ -1408,6 +1408,45 @@ const THERAPY_KB: KBEntry[] =
     "line": null,
     "caveat": null,
     "source": "KDIGO Guidelines"
+  },
+  {
+    "gene": "APOE",
+    "match_functional_classes": null,
+    "action_type": "drug",
+    "drug_name": "Lecanemab (Leqembi)",
+    "action": "Anti-amyloid monoclonal antibody that clears amyloid-beta plaques in the brain. FDA-approved for early Alzheimer's disease (MCI or mild dementia with confirmed amyloid pathology). APOE4 carriers have higher efficacy but also higher risk of ARIA (brain swelling/microbleeds).",
+    "fda_approved": true,
+    "approval_year": "2023",
+    "evidence_level": "FDA_approved",
+    "line": "Early Alzheimer's disease (MCI or mild dementia)",
+    "caveat": "Requires confirmed amyloid pathology (PET or CSF). APOE4 homozygotes have significantly higher ARIA risk — discuss risk/benefit with neurologist.",
+    "source": "FDA BLA 761269"
+  },
+  {
+    "gene": "APOE",
+    "match_functional_classes": null,
+    "action_type": "drug",
+    "drug_name": "Donanemab (Kisunla)",
+    "action": "Anti-amyloid monoclonal antibody targeting amyloid-beta plaques. FDA-approved for early symptomatic Alzheimer's disease. Shown to slow cognitive decline in tau-low/medium patients.",
+    "fda_approved": true,
+    "approval_year": "2024",
+    "evidence_level": "FDA_approved",
+    "line": "Early Alzheimer's disease (MCI or mild dementia)",
+    "caveat": "APOE4 homozygotes excluded from pivotal trial due to high ARIA risk. Confirm amyloid and tau status before prescribing.",
+    "source": "FDA BLA 761248"
+  },
+  {
+    "gene": "APOE",
+    "match_functional_classes": null,
+    "action_type": "surveillance",
+    "drug_name": null,
+    "action": "Annual cognitive screening and neuropsychological assessment. Brain MRI to monitor for amyloid-related imaging abnormalities (ARIA) if on anti-amyloid therapy. Cardiovascular risk factor management (APOE4 also increases cardiovascular disease risk).",
+    "fda_approved": null,
+    "approval_year": null,
+    "evidence_level": "Guideline",
+    "line": null,
+    "caveat": null,
+    "source": "Alzheimer's Association / AAN Guidelines"
   }
 ]
 export function lookupVariantDrugKB(gene: string, functionalClass: string | null): DrugEntry[] {

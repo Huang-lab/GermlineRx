@@ -62,6 +62,8 @@ const QUICK_ALIASES: Record<string, { gene: string; hgvs: string; display: strin
   "exon51":            { gene: "DMD",   hgvs: "del_exon51",      display: "Exon 51 del",     fc: "exon51_skippable" },
   "exon51 deletion":   { gene: "DMD",   hgvs: "del_exon51",      display: "Exon 51 del",     fc: "exon51_skippable" },
   "deltaexon50":       { gene: "DMD",   hgvs: "del_exon50",      display: "Exon 50 del",     fc: null },
+  "apoe4":             { gene: "APOE",  hgvs: "c.388T>C",        display: "APOE4 (ε4)",      fc: null },
+  "apoe ε4":           { gene: "APOE",  hgvs: "c.388T>C",        display: "APOE4 (ε4)",      fc: null },
   "5946del":           { gene: "BRCA2", hgvs: "c.5946del",       display: "c.5946del",       fc: null },
   "6174delt":          { gene: "BRCA2", hgvs: "c.5946del",       display: "6174delT",        fc: null },
   "68_69del":          { gene: "BRCA1", hgvs: "c.68_69del",      display: "185delAG",        fc: null },
@@ -118,6 +120,7 @@ const DISEASE_TO_GENE: Record<string, string> = {
 
 // ─── Curated AF fallback (for common variants when gnomAD API fails) ──────────
 const GNOMAD_CURATED: Record<string, number> = {
+  "APOE:c.388T>C": 0.1390,
   "CFTR:c.1521_1523del": 0.0142,
   "CFTR:c.1652G>A":      0.00015,
   "SOD1:c.14C>T":        0.000004,
@@ -134,7 +137,7 @@ const GNOMAD_CURATED: Record<string, number> = {
 const CLINGEN_ACTIONABLE = new Set([
   "CFTR","BRCA1","BRCA2","PALB2","ATM","CHEK2","MLH1","MSH2","MSH6","PMS2",
   "DMD","SMN1","SOD1","LDLR","TTR","HBB","F8","F9","GBA","HTT","FXN",
-  "MYBPC3","MYH7","RET","NF1","VHL","TP53","KCNQ1","KCNH2","SCN5A",
+  "MYBPC3","MYH7","RET","NF1","VHL","TP53","KCNQ1","KCNH2","SCN5A","APOE",
 ])
 
 // ─── Normalizer ───────────────────────────────────────────────────────────────
@@ -763,6 +766,7 @@ const SEARCH_TERMS: Record<string, string[]> = {
   "GAA":    ["Pompe disease GAA", "acid alpha-glucosidase deficiency"],
   "SCN1A":  ["Dravet syndrome SCN1A", "SCN1A epilepsy"],
   "GJB2":   ["GJB2 hearing loss connexin 26", "nonsyndromic deafness GJB2"],
+  "APOE":   ["APOE4 Alzheimer disease lecanemab", "APOE amyloid anti-amyloid therapy", "Alzheimer's disease APOE4 risk"],
 }
 
 function scoreTrialRelevance(trial: TrialResult, gene: string): number {
