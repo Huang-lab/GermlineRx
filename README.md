@@ -52,11 +52,14 @@ All APIs are free and require no account or key.
 
 **Tier 0 and Tier 2 work for any gene** — ClinVar and ClinicalTrials.gov accept any gene symbol or HGVS notation.
 
-**Tier 1 FDA therapy matching** is most complete for genes with curated entries:
+**Tier 1 FDA therapy matching works for any gene.** Two sources run on every query:
+
+1. **Curated knowledge base** — ~50 well-characterized disease genes with precise variant-level drug matching, NDA/BLA source numbers, and caveats (e.g. Trikafta only for F508del, Eteplirsen only for exon-51-amenable DMD)
+2. **OpenFDA drug label search** — runs for every gene regardless of whether it's in the curated list; surfaces any FDA-approved drug whose label mentions the gene in its indications (e.g. KRAS → Sotorasib, NTRK → Larotrectinib, BRAF → Vemurafenib)
+
+The curated genes below have the most complete variant-specific matching:
 
 CFTR · DMD · SMN1 · SOD1 · HTT · TTR · HBB · BRCA1 · BRCA2 · MLH1 · MSH2 · MSH6 · PMS2 · LDLR · PCSK9 · APOE · GBA · FXN · F8 · F9 · RET · TP53 · PTEN · NF1 · VHL · MYBPC3 · MYH7 · KCNQ1 · SCN5A · PKD1 · FBN1 · ATP7B · PKHD1 · PAH · GAA · SCN1A · GJB2 · and more
-
-For genes not in the curated list, OpenFDA drug label search provides broader fallback coverage.
 
 ---
 
