@@ -4,9 +4,7 @@ GermlineRx translates a germline genetic variant into actionable clinical intell
 
 | Deployment | URL | Mode |
 |------------|-----|------|
-| Vercel (static, recommended) | [germline-rx.vercel.app](https://germline-rx.vercel.app) | Browser-only, live APIs, auto-deploys on push |
-| GitHub Pages (static) | [huang-lab.github.io/GermlineRx](https://huang-lab.github.io/GermlineRx) | Browser-only, live APIs |
-| HuggingFace Spaces (full) | [Rita9CoreX-germline-rx.hf.space](https://Rita9CoreX-germline-rx.hf.space) | All features, full backend + enrichment |
+| Vercel (static) | [germline-rx.vercel.app](https://germline-rx.vercel.app) | Browser-only, live APIs, auto-deploys on push |
 
 ---
 
@@ -84,11 +82,8 @@ All APIs are free and require no account or key.
 
 ```
 GermlineRx/
-├── .github/
-│   └── workflows/
-│       └── deploy.yml                 # Auto-deploy to GitHub Pages on push to main
 ├── germline_webapp/
-│   ├── backend/
+│   ├── backend/                       # Local dev only — not deployed; not kept in sync with the static frontend
 │   │   ├── app/
 │   │   │   ├── api/routes.py          # POST /api/analyze, /normalize, /upload, GET /health
 │   │   │   ├── engine/
@@ -119,20 +114,10 @@ GermlineRx/
 
 ## Hosting
 
-### Vercel (static, recommended)
+### Vercel (static)
 Auto-deploys on every push to `main`. Live at **https://germline-rx.vercel.app**
 
 The app runs fully in-browser with live APIs and no backend requirement for deployment. Tier 0 uses ClinVar + gnomAD (MyVariant.info first, then fallback), Tier 1 uses OpenFDA + curated FDA fallback, Tier 2 uses ClinicalTrials.gov v2.
-
-### GitHub Pages (static)
-Auto-deploys on every push to `main`. Live at **https://huang-lab.github.io/GermlineRx**
-
-Same browser-only engine as Vercel. Trial and therapy outputs are fully live from ClinicalTrials.gov and OpenFDA.
-
-### HuggingFace Spaces (full stack)
-Full backend served via Docker at **https://Rita9CoreX-germline-rx.hf.space**
-
-Frontend and backend run in the same container. All 4 tiers + enrichment available (enrichment requires datalake files).
 
 ---
 

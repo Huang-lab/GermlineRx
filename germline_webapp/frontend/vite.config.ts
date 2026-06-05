@@ -1,10 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   plugins: [react()],
-  // GitHub Pages needs /GermlineRx/ base; Vercel uses /
-  base: process.env.VERCEL ? '/' : (mode === 'production' ? '/GermlineRx/' : '/'),
+  base: '/',
   server: {
     port: 5173,
     proxy: {
